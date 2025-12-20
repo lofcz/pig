@@ -28,3 +28,4 @@ src-tauri/cfg.json
 .vs
 /reference
 /src/templates
+/tools

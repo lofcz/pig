@@ -1,11 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
-import { convertFileSrc } from '@tauri-apps/api/core';
 import { Config, CompanyDetails, Ruleset } from '../types';
-import { mkdir } from '@tauri-apps/plugin-fs';
+import { mkdir, readFile } from '@tauri-apps/plugin-fs';
 import { openPath } from '@tauri-apps/plugin-opener';
 import { getProplatitFiles, FileEntry, moveProplatitFile, getExistingInvoiceCount, getMonthDates, getLastInvoicedMonth } from '../utils/logic';
 import { generateInvoiceOdt, convertToPdf } from '../utils/odt';
-import { escapeXml } from '../utils/helpers';
+import PDFPreviewModal from './PDFPreviewModal';
 
 interface GeneratorProps {
   config: Config;
@@ -42,7 +41,12 @@ export default function Generator({ config }: GeneratorProps) {
   const [drafts, setDrafts] = useState<InvoiceDraft[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastInvoicedMonth, setLastInvoicedMonth] = useState(0);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  
+  // Preview modal state
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewStep, setPreviewStep] = useState<string>('');
 
   useEffect(() => {
     loadData();
@@ -358,7 +362,8 @@ export default function Generator({ config }: GeneratorProps) {
     if (!customer) { alert(`No customer for ${draft.month}/${draft.year} in ruleset ${ruleset.name}`); return undefined; }
     
     const supplier = config.companies.find(c => c.isSupplier) || config.companies[0];
-    const amountStr = draft.amount.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " Kč";
+    // Don't include "Kč" here - the template already has it after {{P_VALUE}}
+    const amountStr = draft.amount.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     const replacements: Record<string, string> = {
       '{{P_NO}}': draft.invoiceNoOverride,
@@ -367,8 +372,41 @@ export default function Generator({ config }: GeneratorProps) {
       '{{P_DUE}}': dueDateStr,
       '{{P_VS}}': draft.variableSymbolOverride,
       '{{P_ACC}}': config.bankAccount,
-      '{{P_SUPPLIER}}': companyToXml(supplier, "DODAVATEL"),
-      '{{P_CUSTOMER}}': companyToXml(customer, "ODBĚRATEL"),
+      // Supplier (Dodavatel) - single block for current template
+      '{{P_SUPPLIER}}': [
+        supplier.name,
+        supplier.street,
+        `${supplier.zip}, ${supplier.city}`,
+        supplier.country,
+        `IČ: ${supplier.ic}`,
+        supplier.dic ? `DIČ: ${supplier.dic}` : ''
+      ].filter(Boolean).join('\n'),
+      // Supplier individual fields (for templates that use them)
+      '{{P_SUP_NAME}}': supplier.name,
+      '{{P_SUP_STREET}}': supplier.street,
+      '{{P_SUP_ZIP}}': supplier.zip,
+      '{{P_SUP_CITY}}': supplier.city,
+      '{{P_SUP_COUNTRY}}': supplier.country,
+      '{{P_SUP_IC}}': supplier.ic,
+      '{{P_SUP_DIC}}': supplier.dic || '',
+      // Customer (Odběratel) - single block for current template
+      '{{P_CUSTOMER}}': [
+        customer.name,
+        customer.street,
+        `${customer.zip}, ${customer.city}`,
+        customer.country,
+        `IČ: ${customer.ic}`,
+        customer.dic ? `DIČ: ${customer.dic}` : ''
+      ].filter(Boolean).join('\n'),
+      // Customer individual fields (for templates that use them)
+      '{{P_CUST_NAME}}': customer.name,
+      '{{P_CUST_STREET}}': customer.street,
+      '{{P_CUST_ZIP}}': customer.zip,
+      '{{P_CUST_CITY}}': customer.city,
+      '{{P_CUST_COUNTRY}}': customer.country,
+      '{{P_CUST_IC}}': customer.ic,
+      '{{P_CUST_DIC}}': customer.dic || '',
+      // Invoice details
       '{{P_DESC}}': draft.description,
       '{{P_VALUE}}': amountStr,
       '{{P_VAT}}': "0%"
@@ -414,22 +452,47 @@ export default function Generator({ config }: GeneratorProps) {
   };
 
   const handlePreview = async (draft: InvoiceDraft) => {
-      const path = await handleGenerate(draft, true);
-      if (path) {
-          await openPath(path);
+      // Open modal immediately with loading state
+      setPreviewModalOpen(true);
+      setPreviewLoading(true);
+      setPreviewPdfUrl(null);
+      setPreviewStep('Preparing invoice template...');
+      
+      try {
+          setPreviewStep('Generating ODT document...');
+          // Small delay to show progress step
+          await new Promise(r => setTimeout(r, 100));
+          
+          setPreviewStep('Converting to PDF...');
+          const path = await handleGenerate(draft, true);
+          
+          if (path) {
+              setPreviewStep('Loading preview...');
+              // Read PDF as binary and create blob URL
+              const pdfData = await readFile(path);
+              const blob = new Blob([pdfData], { type: 'application/pdf' });
+              const url = URL.createObjectURL(blob);
+              setPreviewPdfUrl(url);
+          }
+      } catch (e) {
+          console.error('Preview failed:', e);
+      } finally {
+          setPreviewLoading(false);
+          setPreviewStep('');
       }
   };
+  
+  const closePreviewModal = () => {
+      // Revoke blob URL to free memory
+      if (previewPdfUrl) {
+          URL.revokeObjectURL(previewPdfUrl);
+      }
+      setPreviewModalOpen(false);
+      setPreviewPdfUrl(null);
+      setPreviewLoading(false);
+      setPreviewStep('');
+  };
 
-  function companyToXml(c: CompanyDetails, role: string): string {
-    let xml = `<text:h text:style-name="Heading3" text:outline-level="3"><text:line-break/>${escapeXml(role)}</text:h>`;
-    xml += `<text:h text:style-name="Heading3" text:outline-level="3"><text:line-break/>${escapeXml(c.name)}</text:h>`;
-    xml += `<text:p text:style-name="P72">${escapeXml(c.street)}</text:p>`;
-    xml += `<text:p text:style-name="P72">${escapeXml(c.zip)} ${escapeXml(c.city)}</text:p>`;
-    xml += `<text:p text:style-name="P72">${escapeXml(c.country)}</text:p>`;
-    xml += `<text:h text:style-name="Heading3" text:outline-level="3">IČ: ${escapeXml(c.ic)}</text:h>`;
-    if (c.dic) xml += `<text:h text:style-name="Heading3" text:outline-level="3">DIČ: ${escapeXml(c.dic)}</text:h>`;
-    return xml;
-  }
 
   const totalDraftValue = drafts.reduce((sum, d) => sum + d.amount, 0);
 
@@ -554,6 +617,13 @@ export default function Generator({ config }: GeneratorProps) {
            ))}
        </div>
 
+       <PDFPreviewModal 
+         isOpen={previewModalOpen}
+         onClose={closePreviewModal}
+         pdfUrl={previewPdfUrl}
+         isLoading={previewLoading}
+         progressStep={previewStep}
+       />
     </div>
   );
 }
