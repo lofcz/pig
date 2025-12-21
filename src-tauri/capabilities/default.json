@@ -5,6 +5,7 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "os:default",
     "opener:default",
     "dialog:default",
     {
@@ -26,12 +27,18 @@
       "identifier": "shell:allow-execute",
       "allow": [
         {
-          "name": "soffice",
-          "cmd": "C:\\Program Files\\LibreOffice\\program\\soffice.exe",
+          "name": "powershell",
+          "cmd": "powershell",
+          "args": true
+        },
+        {
+          "name": "sh",
+          "cmd": "sh",
           "args": true
         }
       ]
     },
+    "shell:allow-open",
     {
       "identifier": "fs:scope",
       "allow": ["$HOME/**", "**"]

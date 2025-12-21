@@ -1,5 +1,5 @@
 import { useState, useEffect, memo } from 'react';
-import { Receipt } from 'lucide-react';
+import { Receipt, Loader2 } from 'lucide-react';
 import { openPath } from '@tauri-apps/plugin-opener';
 import { Select, SelectOption, findOption } from './Select';
 import styles from './ExtraItem.module.css';
@@ -17,10 +17,11 @@ interface ExtraItemProps {
   filePath: string;
   value: number;
   currency: Currency;
+  isAnalyzing?: boolean;
   onUpdate: (value: number, currency: Currency, selected: boolean) => void;
 }
 
-function ExtraItem({ fileName, filePath, value, currency, onUpdate }: ExtraItemProps) {
+function ExtraItem({ fileName, filePath, value, currency, isAnalyzing, onUpdate }: ExtraItemProps) {
   const [localValue, setLocalValue] = useState(value === 0 ? '' : String(value));
   const [isFocused, setIsFocused] = useState(false);
   
@@ -62,9 +63,13 @@ function ExtraItem({ fileName, filePath, value, currency, onUpdate }: ExtraItemP
   };
 
   return (
-    <div className={`${styles.container} ${isActive ? styles.active : ''}`}>
+    <div className={`${styles.container} ${isActive ? styles.active : ''} ${isAnalyzing ? styles.analyzing : ''}`}>
       <button onClick={() => openPath(filePath)} className={styles.fileButton}>
-        <Receipt size={14} className={styles.fileIcon} />
+        {isAnalyzing ? (
+          <Loader2 size={14} className={`${styles.fileIcon} ${styles.spinning}`} />
+        ) : (
+          <Receipt size={14} className={styles.fileIcon} />
+        )}
         <span className={styles.fileName}>{fileName}</span>
       </button>
 
@@ -77,6 +82,7 @@ function ExtraItem({ fileName, filePath, value, currency, onUpdate }: ExtraItemP
         onKeyDown={handleValueKeyDown}
         placeholder="0"
         className={styles.valueInput}
+        disabled={isAnalyzing}
       />
 
       <div className={styles.currencySelect}>
@@ -86,6 +92,7 @@ function ExtraItem({ fileName, filePath, value, currency, onUpdate }: ExtraItemP
           options={CURRENCY_OPTIONS}
           isSearchable={false}
           size="sm"
+          isDisabled={isAnalyzing}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
         />

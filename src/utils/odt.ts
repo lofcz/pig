@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { readFile, writeFile } from '@tauri-apps/plugin-fs';
 import { Command } from '@tauri-apps/plugin-shell';
+import { platform } from '@tauri-apps/plugin-os';
 
 interface TextNode {
   node: Text;
@@ -217,15 +218,18 @@ export async function generateInvoiceOdt(
 export async function convertToPdf(odtPath: string, outputDir: string, sofficePath?: string): Promise<void> {
   console.log(`Converting ${odtPath} to PDF in ${outputDir}`);
   const soffice = sofficePath || 'soffice';
-  const command = Command.create(soffice, [
-    '--headless',
-    '--nologo',
-    '--nodefault',
-    '--norestore',
-    '--convert-to', 'pdf',
-    odtPath,
-    '--outdir', outputDir
-  ]);
+  const os = platform();
+  
+  const command = os === 'windows'
+    ? Command.create('powershell', [
+        '-NoProfile',
+        '-Command',
+        `& '${soffice}' --headless --nologo --nodefault --norestore --convert-to pdf '${odtPath}' --outdir '${outputDir}'`
+      ])
+    : Command.create('sh', [
+        '-c',
+        `'${soffice}' --headless --nologo --nodefault --norestore --convert-to pdf '${odtPath}' --outdir '${outputDir}'`
+      ]);
   
   const output = await command.execute();
   if (output.code !== 0) {

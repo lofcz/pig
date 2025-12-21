@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { loadConfig, saveTheme } from './utils/config';
 import { Config, ThemePreference } from './types';
-import Generator from './components/Generator';
+import Generator, { GeneratorRef } from './components/Generator';
 import ConfigEditor, { ConfigEditorRef } from './components/ConfigEditor';
 import { ThemeProvider, Theme, useTheme } from './contexts/ThemeContext';
 import { ConfirmModalProvider } from './contexts/ConfirmModalContext';
@@ -47,6 +47,7 @@ function AppContent({
   const scrollPosRef = useRef(0);
   const settingsScrollPosRef = useRef(0);
   const configEditorRef = useRef<ConfigEditorRef>(null);
+  const generatorRef = useRef<GeneratorRef>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
 
@@ -78,6 +79,8 @@ function AppContent({
   const closeSettings = useCallback((newConfig?: Config) => {
     if (newConfig) {
       setConfig(newConfig);
+      // Re-check API keys availability without re-rendering
+      generatorRef.current?.refreshAnalysisAvailability();
     }
     // Store settings scroll position
     settingsScrollPosRef.current = window.scrollY;
@@ -174,7 +177,7 @@ function AppContent({
             ref={mainRef}
             className={`${showSettings ? 'hidden' : 'page-transition'}`}
           >
-            <Generator config={config} />
+            <Generator ref={generatorRef} config={config} />
           </div>
           
           {/* Settings - always mounted */}

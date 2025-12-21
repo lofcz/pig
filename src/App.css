@@ -1954,3 +1954,46 @@ tr:hover td {
   font-size: 0.6875rem;
 }
 
+/* ============================================
+   InfoBox Component
+   ============================================ */
+.info-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  border-left: 3px solid;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.info-box-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.info-box-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.info-box-content a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.info-box-content a:hover {
+  opacity: 0.8;
+}
+
+/* ============================================
+   Password Input - Hide browser reveal button
+   ============================================ */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear,
+input[type="password"]::-webkit-credentials-auto-fill-button,
+input[type="password"]::-webkit-clear-button {
+  display: none !important;
+}
+

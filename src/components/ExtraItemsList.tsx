@@ -6,9 +6,10 @@ import styles from './ExtraItemsList.module.css';
 interface ExtraItemsListProps {
   items: ProplatitItem[];
   onUpdateItem: (index: number, value: number, currency: 'CZK' | 'EUR' | 'USD', selected: boolean) => void;
+  analyzingIndices?: Set<number>;
 }
 
-function ExtraItemsList({ items, onUpdateItem }: ExtraItemsListProps) {
+function ExtraItemsList({ items, onUpdateItem, analyzingIndices }: ExtraItemsListProps) {
   return (
     <div className={styles.grid}>
       {items.map((item, index) => (
@@ -18,6 +19,7 @@ function ExtraItemsList({ items, onUpdateItem }: ExtraItemsListProps) {
           filePath={item.file.path}
           value={item.value}
           currency={item.currency}
+          isAnalyzing={analyzingIndices?.has(index) ?? false}
           onUpdate={(value, currency, selected) => onUpdateItem(index, value, currency, selected)}
         />
       ))}

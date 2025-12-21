@@ -16,6 +16,25 @@
   opacity: 1;
 }
 
+.analyzing {
+  opacity: 1;
+  border-color: var(--accent-400);
+  background-color: var(--accent-50);
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .fileButton {
   display: flex;
   align-items: center;

@@ -10,22 +10,27 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.2",
     "@dnd-kit/helpers": "^0.2.1",
     "@dnd-kit/react": "^0.2.1",
+    "@google/generative-ai": "^0.24.1",
     "@number-flow/react": "^0.5.10",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.4.2",
     "@tauri-apps/plugin-fs": "^2.4.4",
     "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-os": "^2",
     "@tauri-apps/plugin-shell": "^2.3.3",
     "jszip": "^3.10.1",
     "lucide-react": "^0.562.0",
+    "openai": "^6.15.0",
     "react": "^19.1.0",
     "react-calendar": "^6.0.0",
     "react-dom": "^19.1.0",
     "react-pdf": "^10.2.0",
     "react-select": "^5.10.2",
-    "sonner": "^2.0.7"
+    "sonner": "^2.0.7",
+    "zod": "^4.2.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",

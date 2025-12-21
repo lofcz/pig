@@ -1,14 +1,16 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Config, CompanyDetails, Ruleset } from '../types';
 import { mkdir, readFile } from '@tauri-apps/plugin-fs';
 import { moveProplatitFile, getMonthDates, getLastInvoicedMonth } from '../utils/logic';
 import { generateInvoiceOdt, convertToPdf } from '../utils/odt';
+import { analyzeExtraItems, isAnalysisAvailable, AnalysisProgress } from '../utils/analyzeExtraItems';
 import PDFPreviewModal from './PDFPreviewModal';
 import GenerateAllModal from './GenerateAllModal';
 import ExtraItemsList from './ExtraItemsList';
 import { CauldronButton } from './CauldronButton';
 import { useProplatitFiles } from '../hooks';
 import NumberFlow from '@number-flow/react';
+import { toast } from 'sonner';
 import { 
   FileText, 
   Sparkles, 
@@ -20,12 +22,17 @@ import {
   Eye,
   CheckCircle2,
   Loader2,
-  Package
+  Package,
+  Wand2
 } from 'lucide-react';
 import { Select, findOption } from './Select';
 
 interface GeneratorProps {
   config: Config;
+}
+
+export interface GeneratorRef {
+  refreshAnalysisAvailability: () => void;
 }
 
 interface InvoiceDraft {
@@ -52,7 +59,7 @@ interface DraftUserEdits {
   description?: string;
 }
 
-export default function Generator({ config }: GeneratorProps) {
+const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ config }, ref) {
   const [currentDate] = useState(new Date());
   const [drafts, setDrafts] = useState<InvoiceDraft[]>([]);
   const [lastInvoicedMonth, setLastInvoicedMonth] = useState(0);
@@ -69,6 +76,24 @@ export default function Generator({ config }: GeneratorProps) {
   
   const [generateAllModalOpen, setGenerateAllModalOpen] = useState(false);
   const [generateAllInvoicesSnapshot, setGenerateAllInvoicesSnapshot] = useState<Array<{ id: string; label: string; amount: number }>>([]);
+
+  // AI Analysis state
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress | null>(null);
+  const [canAnalyze, setCanAnalyze] = useState(false);
+  const [analyzingIndices, setAnalyzingIndices] = useState<Set<number>>(new Set());
+
+  // Expose method to refresh analysis availability without re-rendering parent
+  useImperativeHandle(ref, () => ({
+    refreshAnalysisAvailability: () => {
+      isAnalysisAvailable().then(setCanAnalyze);
+    }
+  }));
+
+  // Check if AI analysis is available on mount
+  useEffect(() => {
+    isAnalysisAvailable().then(setCanAnalyze);
+  }, []);
 
   // Use the custom hook for proplatit files
   const {
@@ -94,6 +119,81 @@ export default function Generator({ config }: GeneratorProps) {
     setLastInvoicedMonth(lastM);
     setLastInvoicedMonthLoading(false);
   };
+
+  // AI-powered analysis of extra items
+  const handleAnalyzeExtraItems = useCallback(async () => {
+    if (analyzing || proplatitFiles.length === 0) return;
+
+    setAnalyzing(true);
+
+    try {
+      // Only analyze items that don't have a value yet (0 or empty)
+      const items = proplatitFiles
+        .map((item, index) => ({
+          filePath: item.file.path,
+          fileName: item.file.name,
+          index,
+          value: item.value,
+        }))
+        .filter(item => !item.value || item.value === 0);
+
+      if (items.length === 0) {
+        toast.info('All items already have values');
+        setAnalyzing(false);
+        return;
+      }
+
+      setAnalysisProgress({ completed: 0, total: items.length });
+      
+      // Mark only filtered items as analyzing
+      const itemIndices = new Set(items.map(item => item.index));
+      setAnalyzingIndices(itemIndices);
+
+      let successCount = 0;
+      let errorCount = 0;
+
+      await analyzeExtraItems(items, {
+        concurrency: 8,
+        onProgress: setAnalysisProgress,
+        onItemComplete: (index, result) => {
+          // Remove from analyzing set
+          setAnalyzingIndices(prev => {
+            const next = new Set(prev);
+            next.delete(index);
+            return next;
+          });
+          
+          if (result.success && result.paymentInfo) {
+            successCount++;
+            // Update the item with extracted values
+            updateProplatitItem(
+              index,
+              result.paymentInfo.paidAmount,
+              result.paymentInfo.paidCurrency,
+              result.paymentInfo.paidAmount > 0 // Auto-select if amount > 0
+            );
+          } else {
+            errorCount++;
+            console.error(`[Analysis] Item ${index} failed:`, result.error);
+          }
+        },
+      });
+
+      if (successCount > 0) {
+        toast.success(`Analyzed ${successCount} items successfully`);
+      }
+      if (errorCount > 0) {
+        toast.error(`Failed to analyze ${errorCount} items`);
+      }
+    } catch (e) {
+      console.error('[Analysis] Fatal error:', e);
+      toast.error(`Analysis failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setAnalyzing(false);
+      setAnalysisProgress(null);
+      setAnalyzingIndices(new Set());
+    }
+  }, [analyzing, proplatitFiles, updateProplatitItem]);
 
   // Load on mount and when config changes
   useEffect(() => {
@@ -724,15 +824,17 @@ export default function Generator({ config }: GeneratorProps) {
       {proplatitFiles.length > 0 && (
         <div className="card mb-8 overflow-hidden">
           {/* Accordion Header */}
-          <button 
-            onClick={() => setExtraItemsExpanded(!extraItemsExpanded)}
-            className="w-full px-5 py-4 flex items-center justify-between cursor-pointer transition-colors hover:opacity-90"
+          <div 
+            className="px-5 py-4 flex items-center justify-between"
             style={{ 
               backgroundColor: 'var(--bg-muted)',
               borderBottom: extraItemsExpanded ? '1px solid var(--border-default)' : 'none'
             }}
           >
-            <div className="flex items-center gap-3">
+            <button
+              onClick={() => setExtraItemsExpanded(!extraItemsExpanded)}
+              className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
+            >
               <div 
                 className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
                 style={{ backgroundColor: 'var(--accent-100)' }}
@@ -745,8 +847,34 @@ export default function Generator({ config }: GeneratorProps) {
               <span className="badge badge-primary">
                 {proplatitFiles.length}
               </span>
-            </div>
+            </button>
             <div className="flex items-center gap-4">
+              {/* Analyze Button */}
+              {canAnalyze && proplatitFiles.length > 0 && (
+                <button
+                  onClick={handleAnalyzeExtraItems}
+                  disabled={analyzing}
+                  className="btn btn-secondary btn-sm flex items-center gap-2"
+                  title="Analyze items with AI to extract amounts"
+                >
+                  {analyzing ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>
+                        {analysisProgress 
+                          ? `${analysisProgress.completed}/${analysisProgress.total}`
+                          : 'Analyzing...'
+                        }
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Wand2 size={14} />
+                      <span>Analyze</span>
+                    </>
+                  )}
+                </button>
+              )}
               <div 
                 className="text-lg font-bold font-mono"
                 style={{ color: 'var(--accent-600)' }}
@@ -757,16 +885,21 @@ export default function Generator({ config }: GeneratorProps) {
                   suffix=" Kč"
                 />
               </div>
-              <ChevronDown 
-                size={20} 
-                style={{ 
-                  color: 'var(--text-muted)',
-                  transform: extraItemsExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                  transition: 'transform 0.2s ease'
-                }} 
-              />
+              <button
+                onClick={() => setExtraItemsExpanded(!extraItemsExpanded)}
+                className="p-1 hover:opacity-80 transition-opacity"
+              >
+                <ChevronDown 
+                  size={20} 
+                  style={{ 
+                    color: 'var(--text-muted)',
+                    transform: extraItemsExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.2s ease'
+                  }} 
+                />
+              </button>
             </div>
-          </button>
+          </div>
 
           {/* Accordion Content */}
           <div 
@@ -780,6 +913,7 @@ export default function Generator({ config }: GeneratorProps) {
             <ExtraItemsList
               items={proplatitFiles}
               onUpdateItem={updateProplatitItem}
+              analyzingIndices={analyzingIndices}
             />
           </div>
         </div>
@@ -985,4 +1119,6 @@ export default function Generator({ config }: GeneratorProps) {
       />
     </div>
   );
-}
+});
+
+export default Generator;
