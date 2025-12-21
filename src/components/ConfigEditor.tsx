@@ -1,5 +1,5 @@
 import { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
-import { Config, CompanyDetails, Contact } from '../types';
+import { Config, CompanyDetails, Contact, EmailTemplate } from '../types';
 import { saveConfig } from '../utils/config';
 import { useConfirm } from '../contexts/ConfirmModalContext';
 import { usePrompt } from '../contexts/PromptModalContext';
@@ -8,12 +8,15 @@ import { GeneralSettingsTab } from './GeneralSettingsTab';
 import { CompanyListEditor } from './CompanyListEditor';
 import { ContactsEditor } from './ContactsEditor';
 import { RulesetsEditor } from './RulesetsEditor';
+import { EmailTemplatesEditor } from './EmailTemplatesEditor';
+import { createDefaultTemplate } from '../utils/emailTemplates';
 import { toast } from 'sonner';
 import {
   Building2,
   Users,
   Layers,
-  Settings2
+  Settings2,
+  Mail
 } from 'lucide-react';
 
 interface ConfigEditorProps {
@@ -29,7 +32,7 @@ export interface ConfigEditorRef {
 
 const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, onSave, isVisible }, ref) => {
   const [localConfig, setLocalConfig] = useState<Config>(JSON.parse(JSON.stringify(config)));
-  const [activeTab, setActiveTab] = useState<'general' | 'supplier' | 'customers' | 'contacts' | 'rulesets'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'supplier' | 'customers' | 'contacts' | 'emailTemplates' | 'rulesets'>('general');
   const confirm = useConfirm();
   const prompt = usePrompt();
   
@@ -182,12 +185,64 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
     }
   };
 
+  // Email template management
+  const addEmailTemplate = async () => {
+    const id = await prompt({
+      title: 'Add New Email Template',
+      message: 'Enter a unique ID for this template (e.g., "invoice-notification"):',
+      placeholder: 'template-1',
+      confirmText: 'Create',
+      cancelText: 'Cancel',
+    });
+    
+    if (id) {
+      // Validate the ID
+      if ((localConfig.emailTemplates || []).some(t => t.id === id)) {
+        toast.error('This ID already exists');
+        return;
+      }
+      if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+        toast.error('ID can only contain letters, numbers, hyphens and underscores');
+        return;
+      }
+      
+      const newTemplate = createDefaultTemplate(id);
+      setLocalConfig({...localConfig, emailTemplates: [...(localConfig.emailTemplates || []), newTemplate]});
+    }
+  };
+
+  const updateEmailTemplate = (id: string, template: EmailTemplate) => {
+    setLocalConfig({
+      ...localConfig,
+      emailTemplates: (localConfig.emailTemplates || []).map(t => t.id === id ? template : t)
+    });
+  };
+
+  const removeEmailTemplate = async (id: string) => {
+    const template = (localConfig.emailTemplates || []).find(t => t.id === id);
+    const confirmed = await confirm({
+      title: 'Delete Email Template',
+      message: `Are you sure you want to delete "${template?.name || id}"? This action cannot be undone.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'danger'
+    });
+    
+    if (confirmed) {
+      setLocalConfig({
+        ...localConfig,
+        emailTemplates: (localConfig.emailTemplates || []).filter(t => t.id !== id)
+      });
+    }
+  };
+
   // Tab configuration
   const tabs = [
     { id: 'general' as const, label: 'General', icon: Settings2 },
     { id: 'supplier' as const, label: 'Suppliers', icon: Building2 },
     { id: 'customers' as const, label: 'Customers', icon: Users },
     { id: 'contacts' as const, label: 'Contacts', icon: Users },
+    { id: 'emailTemplates' as const, label: 'E-mails', icon: Mail },
     { id: 'rulesets' as const, label: 'Rulesets', icon: Layers },
   ];
 
@@ -246,9 +301,19 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
         {activeTab === 'contacts' && (
           <ContactsEditor 
             contacts={localConfig.contacts || []}
+            emailTemplates={localConfig.emailTemplates || []}
             onAdd={addContact}
             onUpdate={updateContact}
             onRemove={removeContact}
+          />
+        )}
+
+        {activeTab === 'emailTemplates' && (
+          <EmailTemplatesEditor
+            templates={localConfig.emailTemplates || []}
+            onAdd={addEmailTemplate}
+            onUpdate={updateEmailTemplate}
+            onRemove={removeEmailTemplate}
           />
         )}
 

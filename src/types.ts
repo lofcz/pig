@@ -17,6 +17,15 @@ export interface Contact {
   name: string;
   email: string;
   phone?: string;
+  emailTemplateId?: string; // Reference to an EmailTemplate
+}
+
+// Email template with HTML content
+export interface EmailTemplate {
+  id: string;
+  name: string;
+  subject: string; // Subject line (can contain placeholders)
+  body: string; // HTML content (supports arbitrary HTML + Eta syntax)
 }
 
 export type PeriodicityType = 'monthly' | 'quarterly' | 'yearly' | 'custom_months' | 'custom_days';
@@ -57,6 +66,7 @@ export interface Config {
   sofficePath?: string; // Path to LibreOffice soffice executable
   companies: CompanyDetails[];
   contacts: Contact[];
+  emailTemplates: EmailTemplate[];
   rulesets: Ruleset[];
   primaryCurrency: Currency; // The main currency for invoices and totals
   exchangeRates: {
@@ -75,6 +85,7 @@ export const DEFAULT_CONFIG: Config = {
   rootPath: "",
   contacts: [],
   companies: [],
+  emailTemplates: [],
   rulesets: [],
   primaryCurrency: 'CZK',
   exchangeRates: {

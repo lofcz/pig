@@ -1,19 +1,22 @@
-import { Contact } from '../types';
+import { Contact, EmailTemplate } from '../types';
+import { Select, SelectOption, findOption } from './Select';
 import {
   Plus,
   Trash2,
   Mail,
-  Phone
+  Phone,
+  FileText
 } from 'lucide-react';
 
 interface ContactsEditorProps {
   contacts: Contact[];
+  emailTemplates?: EmailTemplate[];
   onAdd: () => void;
   onUpdate: (id: string, c: Contact) => void;
   onRemove: (id: string) => void;
 }
 
-export function ContactsEditor({ contacts, onAdd, onUpdate, onRemove }: ContactsEditorProps) {
+export function ContactsEditor({ contacts, emailTemplates = [], onAdd, onUpdate, onRemove }: ContactsEditorProps) {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -52,7 +55,8 @@ export function ContactsEditor({ contacts, onAdd, onUpdate, onRemove }: Contacts
           {contacts.map((contact) => (
             <ContactCard 
               key={contact.id} 
-              contact={contact} 
+              contact={contact}
+              emailTemplates={emailTemplates}
               onChange={newC => onUpdate(contact.id, newC)} 
               onRemove={() => onRemove(contact.id)}
             />
@@ -65,12 +69,21 @@ export function ContactsEditor({ contacts, onAdd, onUpdate, onRemove }: Contacts
 
 interface ContactCardProps {
   contact: Contact;
+  emailTemplates: EmailTemplate[];
   onChange: (c: Contact) => void;
   onRemove: () => void;
 }
 
-function ContactCard({ contact, onChange, onRemove }: ContactCardProps) {
+function ContactCard({ contact, emailTemplates, onChange, onRemove }: ContactCardProps) {
   const update = (field: keyof Contact, val: any) => onChange({ ...contact, [field]: val });
+
+  const selectedTemplate = emailTemplates.find(t => t.id === contact.emailTemplateId);
+
+  // Build template options for select
+  const templateOptions: SelectOption<string>[] = emailTemplates.map(t => ({
+    value: t.id,
+    label: t.name || t.id,
+  }));
 
   return (
     <div className="card p-5 space-y-4">
@@ -134,6 +147,32 @@ function ContactCard({ contact, onChange, onRemove }: ContactCardProps) {
           onChange={e => update('phone', e.target.value || undefined)}
           placeholder="+420 123 456 789"
         />
+      </div>
+
+      <div>
+        <label 
+          className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide mb-1"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          <FileText size={12} />
+          Email Template
+          <span className="font-normal normal-case" style={{ color: 'var(--text-subtle)' }}>(optional)</span>
+        </label>
+        <Select
+          options={templateOptions}
+          value={findOption(templateOptions, contact.emailTemplateId)}
+          onChange={(opt) => update('emailTemplateId', opt?.value || undefined)}
+          placeholder="No template"
+          isClearable
+        />
+        {selectedTemplate && (
+          <p 
+            className="text-xs mt-1"
+            style={{ color: 'var(--text-subtle)' }}
+          >
+            Subject: {selectedTemplate.subject || '(empty)'}
+          </p>
+        )}
       </div>
     </div>
   );
