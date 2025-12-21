@@ -214,9 +214,10 @@ export async function generateInvoiceOdt(
   }
 }
 
-export async function convertToPdf(odtPath: string, outputDir: string): Promise<void> {
+export async function convertToPdf(odtPath: string, outputDir: string, sofficePath?: string): Promise<void> {
   console.log(`Converting ${odtPath} to PDF in ${outputDir}`);
-  const command = Command.create('soffice', [
+  const soffice = sofficePath || 'soffice';
+  const command = Command.create(soffice, [
     '--headless',
     '--nologo',
     '--nodefault',

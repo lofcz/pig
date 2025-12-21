@@ -130,12 +130,14 @@ export default function Generator({ config }: GeneratorProps) {
         }
         
         const isFlush = ruleset.minimizeInvoices && (m === endMonth);
-        const totalParts = isFlush ? Math.ceil(accumulatedValue / config.maxInvoiceValue) : 0;
+        const maxValue = ruleset.maxInvoiceValue; // undefined means no splitting
+        const totalParts = (isFlush && maxValue) ? Math.ceil(accumulatedValue / maxValue) : 0;
         
         let partIndex = 0;
         
-        while (accumulatedValue >= config.maxInvoiceValue) {
-          const amount = config.maxInvoiceValue;
+        // Only split if maxInvoiceValue is set
+        while (maxValue && accumulatedValue >= maxValue) {
+          const amount = maxValue;
           accumulatedValue -= amount;
           
           const { invoiceNo } = getMonthDates(year, m, partIndex);
@@ -175,7 +177,9 @@ export default function Generator({ config }: GeneratorProps) {
         }
         
         if (accumulatedValue > 0) {
-          if (ruleset.minimizeInvoices && m !== endMonth) {
+          // Only carry over if minimizeInvoices is enabled AND splitting is enabled (maxValue set)
+          // Without splitting, each billing period should get its own invoice
+          if (ruleset.minimizeInvoices && maxValue && m !== endMonth) {
             // Carry over
           } else {
             const amount = accumulatedValue;
@@ -251,50 +255,28 @@ export default function Generator({ config }: GeneratorProps) {
       const baseTotal = lastMonthDrafts.reduce((sum, d) => sum + d.amount, 0);
       const newTotal = baseTotal + extraValue;
       
-      // Determine how many full invoices and remainder
-      const fullInvoiceCount = Math.floor(newTotal / config.maxInvoiceValue);
-      const remainder = newTotal % config.maxInvoiceValue;
-      
       // Get template from first draft for creating new ones
       const template = lastMonthDrafts[0];
       const year = template.year;
       const month = template.month;
       const ruleset = config.rulesets.find(r => r.id === firstRulesetId)!;
+      const maxValue = ruleset.maxInvoiceValue; // undefined means no splitting
       
       const newLastMonthDrafts: InvoiceDraft[] = [];
-      let extraRemaining = extraValue;
-      let baseRemaining = baseTotal;
       
-      // Create full invoices
-      for (let i = 0; i < fullInvoiceCount; i++) {
-        const amount = config.maxInvoiceValue;
-        
-        // Calculate how much extra is in this invoice
-        let draftExtra = 0;
-        if (baseRemaining >= amount) {
-          draftExtra = 0;
-          baseRemaining -= amount;
-        } else {
-          draftExtra = amount - Math.max(0, baseRemaining);
-          baseRemaining = 0;
-          extraRemaining -= draftExtra;
-        }
-        
-        const { invoiceNo } = getMonthDates(year, month, i);
+      // If no maxValue set, create a single invoice with the total
+      if (!maxValue) {
+        const { invoiceNo } = getMonthDates(year, month, 0);
         const periodLabel = getInvoiceLabel(year, month, ruleset);
-        
-        let label = `${periodLabel} (${ruleset.name})`;
-        if (i > 0) {
-          label += ` Part ${i + 1}`;
-        }
+        const label = `${periodLabel} (${ruleset.name})`;
         
         newLastMonthDrafts.push({
-          id: `${firstRulesetId}-${year}-${month}-${i}`,
+          id: `${firstRulesetId}-${year}-${month}-0`,
           rulesetId: firstRulesetId,
           year,
           month,
-          index: i,
-          amount,
+          index: 0,
+          amount: newTotal,
           description: template.description,
           invoiceNoOverride: invoiceNo,
           variableSymbolOverride: invoiceNo,
@@ -302,40 +284,88 @@ export default function Generator({ config }: GeneratorProps) {
           label,
           periodLabel,
           monthSalary: template.monthSalary,
-          extraValue: draftExtra > 0 ? draftExtra : undefined
+          extraValue: extraValue > 0 ? extraValue : undefined
         });
-      }
-      
-      // Create remainder invoice if any
-      if (remainder > 0) {
-        const partIndex = fullInvoiceCount;
-        const { invoiceNo } = getMonthDates(year, month, partIndex);
-        const periodLabel = getInvoiceLabel(year, month, ruleset);
+      } else {
+        // Determine how many full invoices and remainder
+        const fullInvoiceCount = Math.floor(newTotal / maxValue);
+        const remainder = newTotal % maxValue;
         
-        let label = `${periodLabel} (${ruleset.name})`;
-        if (partIndex > 0) {
-          label += " Remainder";
+        let extraRemaining = extraValue;
+        let baseRemaining = baseTotal;
+        
+        // Create full invoices
+        for (let i = 0; i < fullInvoiceCount; i++) {
+          const amount = maxValue;
+          
+          // Calculate how much extra is in this invoice
+          let draftExtra = 0;
+          if (baseRemaining >= amount) {
+            draftExtra = 0;
+            baseRemaining -= amount;
+          } else {
+            draftExtra = amount - Math.max(0, baseRemaining);
+            baseRemaining = 0;
+            extraRemaining -= draftExtra;
+          }
+          
+          const { invoiceNo } = getMonthDates(year, month, i);
+          const periodLabel = getInvoiceLabel(year, month, ruleset);
+          
+          let label = `${periodLabel} (${ruleset.name})`;
+          if (i > 0) {
+            label += ` Part ${i + 1}`;
+          }
+          
+          newLastMonthDrafts.push({
+            id: `${firstRulesetId}-${year}-${month}-${i}`,
+            rulesetId: firstRulesetId,
+            year,
+            month,
+            index: i,
+            amount,
+            description: template.description,
+            invoiceNoOverride: invoiceNo,
+            variableSymbolOverride: invoiceNo,
+            status: 'pending',
+            label,
+            periodLabel,
+            monthSalary: template.monthSalary,
+            extraValue: draftExtra > 0 ? draftExtra : undefined
+          });
         }
         
-        // All remaining extra goes to remainder
-        const draftExtra = extraRemaining > 0 ? Math.min(extraRemaining, remainder) : undefined;
-        
-        newLastMonthDrafts.push({
-          id: `${firstRulesetId}-${year}-${month}-${partIndex}`,
-          rulesetId: firstRulesetId,
-          year,
-          month,
-          index: partIndex,
-          amount: remainder,
-          description: template.description,
-          invoiceNoOverride: invoiceNo,
-          variableSymbolOverride: invoiceNo,
-          status: 'pending',
-          label,
-          periodLabel,
-          monthSalary: template.monthSalary,
-          extraValue: draftExtra
-        });
+        // Create remainder invoice if any
+        if (remainder > 0) {
+          const partIndex = fullInvoiceCount;
+          const { invoiceNo } = getMonthDates(year, month, partIndex);
+          const periodLabel = getInvoiceLabel(year, month, ruleset);
+          
+          let label = `${periodLabel} (${ruleset.name})`;
+          if (partIndex > 0) {
+            label += " Remainder";
+          }
+          
+          // All remaining extra goes to remainder
+          const draftExtra = extraRemaining > 0 ? Math.min(extraRemaining, remainder) : undefined;
+          
+          newLastMonthDrafts.push({
+            id: `${firstRulesetId}-${year}-${month}-${partIndex}`,
+            rulesetId: firstRulesetId,
+            year,
+            month,
+            index: partIndex,
+            amount: remainder,
+            description: template.description,
+            invoiceNoOverride: invoiceNo,
+            variableSymbolOverride: invoiceNo,
+            status: 'pending',
+            label,
+            periodLabel,
+            monthSalary: template.monthSalary,
+            extraValue: draftExtra
+          });
+        }
       }
       
       return [...earlierDrafts, ...newLastMonthDrafts, ...otherDrafts];
@@ -375,7 +405,7 @@ export default function Generator({ config }: GeneratorProps) {
         return newDraft;
       });
     });
-  }, [baseDrafts, proplatitTotalValue, proplatitLoading, lastInvoicedMonthLoading, config.rulesets, config.maxInvoiceValue]);
+  }, [baseDrafts, proplatitTotalValue, proplatitLoading, lastInvoicedMonthLoading, config.rulesets]);
 
   function isBillingMonth(month: number, ruleset: Ruleset): boolean {
     switch (ruleset.periodicity) {
@@ -466,7 +496,7 @@ export default function Generator({ config }: GeneratorProps) {
       '{{P_DUZP}}': issueDateStr,
       '{{P_DUE}}': dueDateStr,
       '{{P_VS}}': draft.variableSymbolOverride,
-      '{{P_ACC}}': config.bankAccount,
+      '{{P_ACC}}': supplier.bankAccount || '',
       '{{P_SUPPLIER}}': [
         supplier.name,
         supplier.street,
@@ -522,7 +552,7 @@ export default function Generator({ config }: GeneratorProps) {
       await mkdir(outputDir, { recursive: true });
       const templatePath = ruleset.templatePath || 'src/templates/template.odt';
       await generateInvoiceOdt(templatePath, outputPath, replacements);
-      await convertToPdf(outputPath, outputDir);
+      await convertToPdf(outputPath, outputDir, config.sofficePath);
       
       if (!isPreview) {
         if (itemsToMove.length > 0) {
@@ -826,11 +856,16 @@ export default function Generator({ config }: GeneratorProps) {
                       }
                     </p>
                   ) : (
-                    draft.amount === config.maxInvoiceValue && draft.monthSalary > draft.amount && (
-                      <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                        / {draft.monthSalary.toLocaleString()} Kč (split)
-                      </p>
-                    )
+                    (() => {
+                      const draftRuleset = config.rulesets.find(r => r.id === draft.rulesetId);
+                      const maxVal = draftRuleset?.maxInvoiceValue;
+                      // Only show split indicator if splitting is enabled and amount equals max
+                      return maxVal && draft.amount === maxVal && draft.monthSalary > draft.amount && (
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                          / {draft.monthSalary.toLocaleString()} Kč (split)
+                        </p>
+                      );
+                    })()
                   )}
                 </div>
               </div>

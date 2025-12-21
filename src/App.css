@@ -279,11 +279,18 @@ h1, h2, h3, h4, h5, h6 {
 /* ============================================
    Form Elements (using :where for low specificity)
    ============================================ */
+
+/* Labels should not be selectable */
+label {
+  user-select: none;
+}
+
 :where(input:not([type]),
 input[type="text"],
 input[type="number"],
 input[type="email"],
 input[type="password"],
+input[type="tel"],
 textarea,
 select) {
   background-color: var(--input-bg);
@@ -300,6 +307,9 @@ select) {
 :where(input:not([type]),
 input[type="text"],
 input[type="number"],
+input[type="email"],
+input[type="password"],
+input[type="tel"],
 textarea,
 select):hover {
   border-color: var(--text-muted);
@@ -308,6 +318,9 @@ select):hover {
 :where(input:not([type]),
 input[type="text"],
 input[type="number"],
+input[type="email"],
+input[type="password"],
+input[type="tel"],
 textarea,
 select):focus {
   outline: none;
@@ -320,6 +333,10 @@ select):focus {
   height: 18px;
   accent-color: var(--accent-500);
   cursor: pointer;
+}
+
+:where(input[type="checkbox"]):focus {
+  outline: none;
 }
 
 /* Number input - hide spinners but allow scroll */
@@ -575,15 +592,23 @@ select.select-sm {
   border-bottom: none;
 }
 
-/* Minimize invoices toggle - match ruleset header visually */
-.minimize-invoices-active {
-  background: linear-gradient(135deg, var(--accent-100), var(--accent-50)) !important;
-  border: 1px solid var(--accent-200);
+/* Toggle checkbox container - active state */
+.toggle-checkbox {
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  transition: background-color 150ms ease, border-color 150ms ease;
+  background-color: var(--bg-muted);
+  border: 1px solid transparent; /* Prevent layout shift when active */
 }
 
-.dark .minimize-invoices-active {
-  background: linear-gradient(135deg, rgba(79, 70, 229, 0.2), rgba(55, 48, 163, 0.15)) !important;
-  border: 1px solid rgba(79, 70, 229, 0.3);
+.toggle-checkbox.active {
+  background: linear-gradient(135deg, var(--accent-100), var(--accent-50));
+  border-color: var(--accent-200);
+}
+
+.dark .toggle-checkbox.active {
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.2), rgba(55, 48, 163, 0.15));
+  border-color: rgba(79, 70, 229, 0.3);
 }
 
 .dark .ruleset-header .ruleset-icon {

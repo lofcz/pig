@@ -8,6 +8,15 @@ export interface CompanyDetails {
   ic: string;
   dic?: string;
   isSupplier?: boolean;
+  contactId?: string; // Reference to a Contact for this customer
+  bankAccount?: string; // Only for suppliers
+}
+
+export interface Contact {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
 }
 
 export type PeriodicityType = 'monthly' | 'quarterly' | 'yearly' | 'custom_months' | 'custom_days';
@@ -32,6 +41,7 @@ export interface Ruleset {
   entitlementDay: number;
   dueDateOffsetDays?: number; // Days from current date for due date (default: 14)
   minimizeInvoices?: boolean;
+  maxInvoiceValue?: number; // Max value per invoice before splitting
   salaryRules: SalaryRule[];
   rules: CustomerRule[];
   descriptions: string[];
@@ -42,86 +52,29 @@ export type ThemePreference = 'light' | 'dark' | 'system';
 
 export interface Config {
   rootPath: string;
+  sofficePath?: string; // Path to LibreOffice soffice executable
   companies: CompanyDetails[];
+  contacts: Contact[];
   rulesets: Ruleset[];
-  maxInvoiceValue: number;
   exchangeRates: {
     EUR: number;
     USD: number;
   };
-  bankAccount: string;
   theme?: ThemePreference;
+  // Deprecated - migrated to CompanyDetails.bankAccount (for suppliers)
+  bankAccount?: string;
+  // Deprecated - migrated to Ruleset.maxInvoiceValue
+  maxInvoiceValue?: number;
 }
 
 export const DEFAULT_CONFIG: Config = {
-  rootPath: "C:\\Users\\lordo\\Documents\\BioWare\\pig",
-  companies: [
-    {
-      id: "supplier",
-      name: "Matěj Štágl",
-      street: "Božice 115",
-      city: "Znojmo",
-      zip: "671 64",
-      country: "Česká republika",
-      ic: "08406049",
-      isSupplier: true
-    },
-    {
-      id: "scio_zizkov",
-      name: "ScioŠkola Žižkov – střední škola, s.r.o.",
-      street: "Prokopova 100/16, Žižkov",
-      city: "Praha 3",
-      zip: "130 00",
-      country: "Česká republika",
-      ic: "07116349"
-    },
-    {
-      id: "scio_nusle",
-      name: "ScioŠkola Praha Nusle - základní škola, s.r.o.",
-      street: "Boleslavova 250/1, Nusle",
-      city: "Praha 4",
-      zip: "140 00",
-      country: "Česká republika",
-      ic: "07231881"
-    }
-  ],
-  rulesets: [
-    {
-      id: "scio",
-      name: "Scio",
-      periodicity: "monthly",
-      entitlementDay: 5,
-      salaryRules: [
-        {
-          startDate: "2020-01",
-          endDate: "2025-10",
-          value: 106000,
-          deduction: 0
-        },
-        {
-          startDate: "2025-11",
-          endDate: "2099-12",
-          value: 143000,
-          deduction: 7225
-        }
-      ],
-      rules: [
-        { condition: "odd", companyId: "scio_nusle" },
-        { condition: "default", companyId: "scio_zizkov" }
-      ],
-      descriptions: [
-        "Konzultační a programátorské služby na EduMap.",
-        "Konzultační a programátorské služby na ScioBot",
-        "Konzultační a programátorské služby na ScioStudium",
-        "Konzultační a programátorské služby na ScioChat"
-      ]
-    }
-  ],
-  maxInvoiceValue: 90000,
+  rootPath: "",
+  contacts: [],
+  companies: [],
+  rulesets: [],
   exchangeRates: {
     EUR: 25,
     USD: 23
   },
-  bankAccount: "164182402 / 0600",
   theme: 'system'
 };

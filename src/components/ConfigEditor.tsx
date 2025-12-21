@@ -1,5 +1,5 @@
 import { useState, useEffect, forwardRef, useImperativeHandle, useMemo, useCallback, useRef } from 'react';
-import { Config, CompanyDetails, SalaryRule, CustomerRule, Ruleset } from '../types';
+import { Config, CompanyDetails, SalaryRule, CustomerRule, Ruleset, Contact } from '../types';
 import { DragDropProvider, DragOverlay } from '@dnd-kit/react';
 import { useSortable } from '@dnd-kit/react/sortable';
 import { move } from '@dnd-kit/helpers';
@@ -34,7 +34,11 @@ import {
   Moon,
   Monitor,
   Palette,
-  GripVertical
+  GripVertical,
+  Mail,
+  Phone,
+  Terminal,
+  Wand2
 } from 'lucide-react';
 import { Select, SelectOption, findOption } from './Select';
 
@@ -66,7 +70,7 @@ export interface ConfigEditorRef {
 
 const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, onSave, isVisible }, ref) => {
   const [localConfig, setLocalConfig] = useState<Config>(JSON.parse(JSON.stringify(config)));
-  const [activeTab, setActiveTab] = useState<'general' | 'supplier' | 'customers' | 'rulesets'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'supplier' | 'customers' | 'contacts' | 'rulesets'>('general');
   const { theme, setTheme } = useTheme();
   const confirm = useConfirm();
   const prompt = usePrompt();
@@ -148,10 +152,68 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
     }
   };
 
+  const addContact = async () => {
+    const id = await prompt({
+      title: 'Add Contact',
+      message: 'Enter a unique ID for the new contact.',
+      placeholder: 'e.g. john_doe',
+      confirmText: 'Create',
+      cancelText: 'Cancel'
+    });
+    
+    if (!id) return;
+    
+    if (localConfig.contacts?.find(c => c.id === id)) {
+      toast.error('A contact with this ID already exists');
+      return;
+    }
+    
+    const newContact: Contact = { 
+      id, 
+      name: "New Contact", 
+      email: "" 
+    };
+    
+    setLocalConfig(prev => ({
+      ...prev,
+      contacts: [...(prev.contacts || []), newContact]
+    }));
+  };
+
+  const updateContact = (id: string, newContact: Contact) => {
+    setLocalConfig(prev => ({
+      ...prev,
+      contacts: (prev.contacts || []).map(c => c.id === id ? newContact : c)
+    }));
+  };
+
+  const removeContact = async (id: string) => {
+    const contact = localConfig.contacts?.find(c => c.id === id);
+    const confirmed = await confirm({
+      title: 'Delete Contact',
+      message: `Are you sure you want to delete "${contact?.name || id}"? This action cannot be undone.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'danger'
+    });
+    
+    if (confirmed) {
+      setLocalConfig(prev => ({
+        ...prev,
+        contacts: (prev.contacts || []).filter(c => c.id !== id),
+        // Also remove contact references from companies
+        companies: prev.companies.map(company => 
+          company.contactId === id ? { ...company, contactId: undefined } : company
+        )
+      }));
+    }
+  };
+
   const tabs = [
     { id: 'general' as const, label: 'General', icon: Settings2 },
-    { id: 'supplier' as const, label: 'Supplier', icon: Building2 },
+    { id: 'supplier' as const, label: 'Suppliers', icon: Building2 },
     { id: 'customers' as const, label: 'Customers', icon: Users },
+    { id: 'contacts' as const, label: 'Contacts', icon: Mail },
     { id: 'rulesets' as const, label: 'Rulesets', icon: Layers },
   ];
 
@@ -232,40 +294,11 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
               isDirectory
               icon={FolderOpen}
             />
-            
-            <div>
-              <label 
-                className="flex items-center gap-2 text-sm font-semibold mb-2"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                <CreditCard size={16} />
-                Bank Account
-              </label>
-              <input
-                type="text"
-                value={localConfig.bankAccount}
-                onChange={e => setLocalConfig({...localConfig, bankAccount: e.target.value})}
-                placeholder="123456789 / 0100"
-              />
-            </div>
-            
-            <div>
-              <label 
-                className="flex items-center gap-2 text-sm font-semibold mb-2"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                <DollarSign size={16} />
-                Max Invoice Value
-              </label>
-              <input
-                type="number"
-                value={localConfig.maxInvoiceValue}
-                onChange={e => setLocalConfig({...localConfig, maxInvoiceValue: Number(e.target.value)})}
-              />
-              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                Invoices exceeding this amount will be split into multiple documents
-              </p>
-            </div>
+
+            <SofficePathInput
+              value={localConfig.sofficePath || ''}
+              onChange={val => setLocalConfig({...localConfig, sofficePath: val || undefined})}
+            />
             
             <div 
               className="p-4 rounded-lg"
@@ -333,11 +366,23 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
           <div>
             <CompanyListEditor 
               companies={localConfig.companies.filter(c => !c.isSupplier)} 
+              contacts={localConfig.contacts || []}
               onAdd={() => addCompany(false)}
               onUpdate={updateCompany}
               onRemove={removeCompany}
               title="Customers"
               emptyMessage="No customers configured. Add your clients to generate invoices for them."
+            />
+          </div>
+        )}
+
+        {activeTab === 'contacts' && (
+          <div>
+            <ContactsEditor 
+              contacts={localConfig.contacts || []}
+              onAdd={addContact}
+              onUpdate={updateContact}
+              onRemove={removeContact}
             />
           </div>
         )}
@@ -418,8 +463,146 @@ function PathInput({ value, onChange, isDirectory = false, label, icon: Icon }: 
   );
 }
 
+interface SofficePathInputProps {
+  value: string;
+  onChange: (val: string) => void;
+}
+
+// Common LibreOffice installation paths on Windows
+const SOFFICE_COMMON_PATHS = [
+  'C:\\Program Files\\LibreOffice\\program\\soffice.exe',
+  'C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe',
+  'C:\\Program Files\\LibreOffice 7\\program\\soffice.exe',
+  'C:\\Program Files\\LibreOffice 24\\program\\soffice.exe',
+  'C:\\Program Files\\OpenOffice\\program\\soffice.exe',
+  'C:\\Program Files (x86)\\OpenOffice\\program\\soffice.exe',
+];
+
+function SofficePathInput({ value, onChange }: SofficePathInputProps) {
+  const [isValid, setIsValid] = useState<boolean | null>(null);
+  const [isDetecting, setIsDetecting] = useState(false);
+
+  useEffect(() => {
+    if (!value) { setIsValid(null); return; }
+    exists(value).then(setIsValid).catch(() => setIsValid(false));
+  }, [value]);
+
+  const handleBrowse = async () => {
+    const selected = await open({
+      multiple: false,
+      defaultPath: value || 'C:\\Program Files',
+      filters: [{ name: 'Executable', extensions: ['exe'] }]
+    });
+    if (selected && typeof selected === 'string') {
+      onChange(selected);
+    }
+  };
+
+  const handleAutoDetect = async () => {
+    setIsDetecting(true);
+    try {
+      for (const path of SOFFICE_COMMON_PATHS) {
+        if (await exists(path)) {
+          onChange(path);
+          toast.success('LibreOffice found!');
+          setIsDetecting(false);
+          return;
+        }
+      }
+      toast.error('LibreOffice not found in common locations. Please browse manually.');
+    } catch (e) {
+      toast.error('Auto-detection failed');
+    }
+    setIsDetecting(false);
+  };
+
+  return (
+    <div>
+      <label 
+        className="flex items-center gap-2 text-sm font-semibold mb-2"
+        style={{ color: 'var(--text-secondary)' }}
+      >
+        <Terminal size={16} />
+        LibreOffice Path
+      </label>
+      <div className="flex gap-2 items-center">
+        <div className="relative flex-1">
+          <input
+            type="text"
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            placeholder="soffice (uses PATH if empty)"
+            className={`pr-10 ${isValid === true ? 'validation-valid' : isValid === false ? 'validation-invalid' : ''}`}
+          />
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+            {isValid === true && <Check size={18} className="validation-valid-icon" />}
+            {isValid === false && <AlertTriangle size={18} className="validation-invalid-icon" />}
+          </div>
+        </div>
+        <button 
+          onClick={handleAutoDetect} 
+          className="btn btn-secondary btn-icon"
+          disabled={isDetecting}
+          title="Auto-detect LibreOffice"
+        >
+          <Wand2 size={18} className={isDetecting ? 'animate-spin' : ''} />
+        </button>
+        <button onClick={handleBrowse} className="btn btn-secondary btn-icon" title="Browse...">
+          <FolderOpen size={18} />
+        </button>
+      </div>
+      <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+        Path to soffice.exe for PDF conversion. Leave empty to use system PATH.
+      </p>
+    </div>
+  );
+}
+
+interface ToggleCheckboxProps {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  title: string;
+  description?: string;
+  icon?: React.ComponentType<{ size?: number; style?: React.CSSProperties }>;
+  children?: React.ReactNode;
+}
+
+function ToggleCheckbox({ checked, onChange, title, description, icon: Icon, children }: ToggleCheckboxProps) {
+  return (
+    <div className={`toggle-checkbox ${checked ? 'active' : ''}`}>
+      <label className="flex items-center gap-3 cursor-pointer">
+        <input 
+          type="checkbox" 
+          checked={checked}
+          onChange={e => onChange(e.target.checked)}
+          className="w-5 h-5"
+        />
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            {Icon && <Icon size={16} style={{ color: 'var(--text-secondary)' }} />}
+            <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
+              {title}
+            </span>
+          </div>
+          {description && (
+            <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              {description}
+            </p>
+          )}
+        </div>
+      </label>
+      {checked && children && (
+        <div className="mt-3 ml-8">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface CompanyListEditorProps {
   companies: CompanyDetails[];
+  contacts?: Contact[];
   onAdd: () => void;
   onUpdate: (id: string, c: CompanyDetails) => void;
   onRemove: (id: string) => void;
@@ -427,7 +610,7 @@ interface CompanyListEditorProps {
   emptyMessage: string;
 }
 
-function CompanyListEditor({ companies, onAdd, onUpdate, onRemove, title, emptyMessage }: CompanyListEditorProps) {
+function CompanyListEditor({ companies, contacts, onAdd, onUpdate, onRemove, title, emptyMessage }: CompanyListEditorProps) {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -464,7 +647,8 @@ function CompanyListEditor({ companies, onAdd, onUpdate, onRemove, title, emptyM
           {companies.map((c) => (
             <CompanyCard 
               key={c.id} 
-              company={c} 
+              company={c}
+              contacts={contacts}
               onChange={newC => onUpdate(c.id, newC)} 
               onRemove={() => onRemove(c.id)}
             />
@@ -477,12 +661,19 @@ function CompanyListEditor({ companies, onAdd, onUpdate, onRemove, title, emptyM
 
 interface CompanyCardProps {
   company: CompanyDetails;
+  contacts?: Contact[];
   onChange: (c: CompanyDetails) => void;
   onRemove: () => void;
 }
 
-function CompanyCard({ company, onChange, onRemove }: CompanyCardProps) {
+function CompanyCard({ company, contacts, onChange, onRemove }: CompanyCardProps) {
   const update = (field: keyof CompanyDetails, val: any) => onChange({ ...company, [field]: val });
+  
+  // Contact options for Select component (only for customers)
+  const contactOptions = useMemo(() => {
+    if (!contacts || company.isSupplier) return [];
+    return contacts.map(c => ({ value: c.id, label: `${c.name} (${c.email})` }));
+  }, [contacts, company.isSupplier]);
 
   return (
     <div className="card p-5 space-y-4">
@@ -602,9 +793,188 @@ function CompanyCard({ company, onChange, onRemove }: CompanyCardProps) {
           />
         </div>
       </div>
+
+      {/* Bank account for suppliers only */}
+      {company.isSupplier && (
+        <div>
+          <label 
+            className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide mb-1"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            <CreditCard size={14} />
+            Bank Account
+          </label>
+          <input 
+            value={company.bankAccount || ''} 
+            onChange={e => update('bankAccount', e.target.value || undefined)}
+            placeholder="123456789 / 0100"
+          />
+        </div>
+      )}
+
+      {/* Contact selector for customers only */}
+      {!company.isSupplier && contacts && (
+        <div>
+          <label 
+            className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide mb-1"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            <Mail size={14} />
+            Contact Person
+          </label>
+          <Select
+            value={findOption(contactOptions, company.contactId)}
+            onChange={(opt) => update('contactId', opt?.value || undefined)}
+            options={contactOptions}
+            placeholder="No contact assigned"
+            isClearable
+            isSearchable={false}
+          />
+          <p className="text-xs mt-1" style={{ color: 'var(--text-subtle)' }}>
+            Assigned contact for automated emails
+          </p>
+        </div>
+      )}
     </div>
   );
 }
+
+// --- Contacts Editor ---
+
+interface ContactsEditorProps {
+  contacts: Contact[];
+  onAdd: () => void;
+  onUpdate: (id: string, c: Contact) => void;
+  onRemove: (id: string) => void;
+}
+
+function ContactsEditor({ contacts, onAdd, onUpdate, onRemove }: ContactsEditorProps) {
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h3 
+            className="text-lg font-bold"
+            style={{ color: 'var(--text-primary)' }}
+          >
+            Contacts
+          </h3>
+          <p 
+            className="text-sm"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            {contacts.length} contact{contacts.length !== 1 ? 's' : ''} configured
+          </p>
+        </div>
+        <button onClick={onAdd} className="btn btn-success">
+          <Plus size={18} />
+          <span>Add Contact</span>
+        </button>
+      </div>
+
+      {contacts.length === 0 ? (
+        <div 
+          className="p-8 rounded-lg text-center"
+          style={{ backgroundColor: 'var(--bg-muted)' }}
+        >
+          <Mail size={48} className="mx-auto mb-3" style={{ color: 'var(--text-subtle)' }} />
+          <p style={{ color: 'var(--text-muted)' }}>
+            No contacts configured. Add contacts to assign them to customers for automated emails.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+          {contacts.map((contact) => (
+            <ContactCard 
+              key={contact.id} 
+              contact={contact} 
+              onChange={newC => onUpdate(contact.id, newC)} 
+              onRemove={() => onRemove(contact.id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface ContactCardProps {
+  contact: Contact;
+  onChange: (c: Contact) => void;
+  onRemove: () => void;
+}
+
+function ContactCard({ contact, onChange, onRemove }: ContactCardProps) {
+  const update = (field: keyof Contact, val: any) => onChange({ ...contact, [field]: val });
+
+  return (
+    <div className="card p-5 space-y-4">
+      <div className="flex items-start justify-between">
+        <div>
+          <span className="badge badge-primary">
+            {contact.id}
+          </span>
+        </div>
+        <button 
+          onClick={onRemove} 
+          className="btn btn-ghost btn-icon"
+          style={{ color: 'var(--error-500)' }}
+        >
+          <Trash2 size={18} />
+        </button>
+      </div>
+      
+      <div>
+        <label 
+          className="text-xs font-semibold uppercase tracking-wide mb-1 block"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          Name
+        </label>
+        <input 
+          value={contact.name} 
+          onChange={e => update('name', e.target.value)} 
+          placeholder="Contact name"
+        />
+      </div>
+
+      <div>
+        <label 
+          className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide mb-1"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          <Mail size={12} />
+          Email
+        </label>
+        <input 
+          type="email"
+          value={contact.email} 
+          onChange={e => update('email', e.target.value)}
+          placeholder="email@example.com"
+        />
+      </div>
+
+      <div>
+        <label 
+          className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide mb-1"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          <Phone size={12} />
+          Phone
+          <span className="font-normal normal-case" style={{ color: 'var(--text-subtle)' }}>(optional)</span>
+        </label>
+        <input 
+          type="tel"
+          value={contact.phone || ''} 
+          onChange={e => update('phone', e.target.value || undefined)}
+          placeholder="+420 123 456 789"
+        />
+      </div>
+    </div>
+  );
+}
+
+// --- Rulesets Editor ---
 
 interface RulesetsEditorProps {
   rulesets: Ruleset[];
@@ -614,8 +984,10 @@ interface RulesetsEditorProps {
 
 function RulesetsEditor({ rulesets, companies, onChange }: RulesetsEditorProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set(rulesets.map(r => r.id)));
+  const [hasInteracted, setHasInteracted] = useState(false);
   
   const toggleExpanded = (id: string) => {
+    setHasInteracted(true);
     setExpandedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -662,7 +1034,7 @@ function RulesetsEditor({ rulesets, companies, onChange }: RulesetsEditorProps) 
 
           {/* Collapsible Content */}
           {isExpanded && (
-            <div className="ruleset-content-inner p-6 space-y-6">
+            <div className={`p-6 space-y-6 ${hasInteracted ? 'ruleset-content-inner' : ''}`}>
             {/* Basic Settings */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -713,55 +1085,69 @@ function RulesetsEditor({ rulesets, companies, onChange }: RulesetsEditorProps) 
               </div>
             </div>
 
-            {/* Due Date Offset */}
-            <div className="max-w-xs">
+            {/* Due Date Offset & Template Path */}
+            <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4">
+              <div>
+                <label 
+                  className="flex items-center gap-2 text-sm font-semibold mb-2"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  <Clock size={16} />
+                  Due Date Offset (Days)
+                </label>
+                <input 
+                  type="number"
+                  value={rs.dueDateOffsetDays ?? 14}
+                  onChange={e => updateRuleset(i, 'dueDateOffsetDays', Number(e.target.value))}
+                  placeholder="14"
+                  min={0}
+                />
+                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                  Days from current date for due date
+                </p>
+              </div>
+
+              <PathInput 
+                label="ODT Template Path"
+                value={rs.templatePath || ''}
+                onChange={val => updateRuleset(i, 'templatePath', val)}
+                icon={FileText}
+              />
+            </div>
+
+            {/* Max Invoice Value (Optional) */}
+            <ToggleCheckbox
+              checked={rs.maxInvoiceValue !== undefined}
+              onChange={checked => updateRuleset(i, 'maxInvoiceValue', checked ? 90000 : undefined)}
+              title="Split Large Invoices"
+              icon={DollarSign}
+            >
               <label 
-                className="flex items-center gap-2 text-sm font-semibold mb-2"
-                style={{ color: 'var(--text-secondary)' }}
+                className="text-xs font-medium mb-1 block"
+                style={{ color: 'var(--text-muted)' }}
               >
-                <Clock size={16} />
-                Due Date Offset (Days)
+                Max value per invoice
               </label>
               <input 
                 type="number"
-                value={rs.dueDateOffsetDays ?? 14}
-                onChange={e => updateRuleset(i, 'dueDateOffsetDays', Number(e.target.value))}
-                placeholder="14"
-                min={0}
+                className="max-w-[200px]"
+                value={rs.maxInvoiceValue}
+                onChange={e => updateRuleset(i, 'maxInvoiceValue', Number(e.target.value))}
+                placeholder="90000"
+                min={1}
               />
-              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                Days from current date for payment due date (default: 14)
+              <p className="text-xs mt-1" style={{ color: 'var(--text-subtle)' }}>
+                Invoices exceeding this amount will be split into multiple documents
               </p>
-            </div>
-
-            {/* Template Path */}
-            <PathInput 
-              label="ODT Template Path"
-              value={rs.templatePath || ''}
-              onChange={val => updateRuleset(i, 'templatePath', val)}
-              icon={FileText}
-            />
+            </ToggleCheckbox>
 
             {/* Minimize Invoices Toggle */}
-            <label 
-              className={`flex items-center gap-3 p-4 rounded-lg cursor-pointer transition-colors ${rs.minimizeInvoices ? 'minimize-invoices-active' : ''}`}
-              style={{ backgroundColor: rs.minimizeInvoices ? undefined : 'var(--bg-muted)' }}
-            >
-              <input 
-                type="checkbox" 
-                checked={!!rs.minimizeInvoices}
-                onChange={e => updateRuleset(i, 'minimizeInvoices', e.target.checked)}
-                className="w-5 h-5"
-              />
-              <div>
-                <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                  Minimize Invoice Count
-                </p>
-                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                  Carry over remainders to reduce total number of invoices
-                </p>
-              </div>
-            </label>
+            <ToggleCheckbox
+              checked={!!rs.minimizeInvoices}
+              onChange={checked => updateRuleset(i, 'minimizeInvoices', checked)}
+              title="Minimize Invoice Count"
+              description="Carry over remainders to reduce total number of invoices"
+            />
 
             {/* Invoicing Rules */}
             <div 

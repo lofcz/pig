@@ -10,7 +10,39 @@ import { Toaster } from 'sonner';
 import { FileText, Settings, Save, Loader2 } from 'lucide-react';
 import './App.css';
 
-function AppContent({ config, setConfig }: { config: Config; setConfig: (c: Config) => void }) {
+type TaglineTriplet = readonly [string, string, string];
+
+const TAGLINE_TRIPLETS: readonly TaglineTriplet[] = [
+  ['Infinite', 'Money', 'Glitch'],
+  ['Death', 'And', 'Taxes'],
+  ['Your', 'Papers', 'Please'],
+  ['Terry', 'Andrew', 'Davis'],
+  ['50%', 'Less', 'Bugs'],
+  ['Crash', 'To', 'Desktop'],
+  ['Fortis', 'Fortuna', 'Adiuvat'],
+  ['Audentes', 'Fortuna', 'Adiuvat'],
+  ['Audentes', 'Fortuna', 'Adiuvat'],
+  ['Pacta', 'Sunt', 'Servanda'],
+] as const;
+
+function pickRandomTriplet<T>(items: readonly T[], fallback: T): T {
+  if (items.length === 0) return fallback;
+  return items[Math.floor(Math.random() * items.length)] ?? fallback;
+}
+
+function formatTriplet([a, b, c]: TaglineTriplet) {
+  return `${a} • ${b} • ${c}`;
+}
+
+function AppContent({
+  config,
+  setConfig,
+  taglineTriplet,
+}: {
+  config: Config;
+  setConfig: (c: Config) => void;
+  taglineTriplet: TaglineTriplet;
+}) {
   const [showSettings, setShowSettings] = useState(false);
   const scrollPosRef = useRef(0);
   const settingsScrollPosRef = useRef(0);
@@ -105,7 +137,7 @@ function AppContent({ config, setConfig }: { config: Config; setConfig: (c: Conf
                   className="text-xs font-medium"
                   style={{ color: 'var(--text-muted)' }}
                 >
-                  Infinite • Money • Glitch
+                  {formatTriplet(taglineTriplet)}
                 </p>
               </div>
             </div>
@@ -191,6 +223,9 @@ function AppContent({ config, setConfig }: { config: Config; setConfig: (c: Conf
 function App() {
   const [config, setConfig] = useState<Config | null>(null);
   const [loading, setLoading] = useState(true);
+  const [taglineTriplet] = useState<TaglineTriplet>(() =>
+    pickRandomTriplet<TaglineTriplet>(TAGLINE_TRIPLETS, ['Infinite', 'Money', 'Glitch'])
+  );
 
   useEffect(() => {
     loadConfig().then((c) => {
@@ -254,7 +289,7 @@ function App() {
     >
       <ConfirmModalProvider>
         <PromptModalProvider>
-          <AppContent config={config} setConfig={setConfig} />
+          <AppContent config={config} setConfig={setConfig} taglineTriplet={taglineTriplet} />
           <ThemedToaster />
         </PromptModalProvider>
       </ConfirmModalProvider>

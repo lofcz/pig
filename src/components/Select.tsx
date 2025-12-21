@@ -70,11 +70,13 @@ const buildStyles = <T, IsMulti extends boolean>(
     margin: 0,
   }),
   
-  input: (base) => ({
+  input: (base, state) => ({
     ...base,
     color: 'var(--text-primary)',
     margin: 0,
     padding: 0,
+    // Hide blinking cursor when not searchable
+    caretColor: state.selectProps.isSearchable === false ? 'transparent' : undefined,
   }),
   
   menu: (base) => ({
