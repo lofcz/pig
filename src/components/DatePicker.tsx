@@ -22,14 +22,14 @@ const SIZE_CONFIG = {
   default: {
     padding: '0.625rem 0.875rem',  // Matches input padding
     fontSize: '0.9375rem',          // Matches input font-size
-    minHeight: '42px',              // Matches input height
+    minHeight: 'var(--control-height)', // Unified control height (Select/Input/DatePicker)
     iconSize: 16,
     gap: '0.625rem',
   },
   sm: {
     padding: '0.375rem 0.625rem',   // Compact version
     fontSize: '0.8125rem',          // Matches Select sm
-    minHeight: '32px',
+    minHeight: 'var(--control-height)',
     iconSize: 14,
     gap: '0.5rem',
   },
@@ -155,6 +155,7 @@ function DatePickerInner({ value, onChange, placeholder, size = 'default', disab
           alignItems: 'center',
           gap: config.gap,
           padding: config.padding,
+          height: 'var(--control-height)',
           minHeight: config.minHeight,
           fontSize: config.fontSize,
           fontFamily: 'var(--font-sans)',

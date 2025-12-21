@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Config, CompanyDetails, Ruleset } from '../types';
 import { mkdir, readFile } from '@tauri-apps/plugin-fs';
 import { moveProplatitFile, getMonthDates, getLastInvoicedMonth } from '../utils/logic';
@@ -8,6 +8,7 @@ import GenerateAllModal from './GenerateAllModal';
 import ExtraItemsList from './ExtraItemsList';
 import { CauldronButton } from './CauldronButton';
 import { useProplatitFiles } from '../hooks';
+import NumberFlow from '@number-flow/react';
 import { 
   FileText, 
   Sparkles, 
@@ -44,12 +45,22 @@ interface InvoiceDraft {
   extraValue?: number;
 }
 
+// User edits to preserve across draft regenerations
+interface DraftUserEdits {
+  invoiceNoOverride?: string;
+  variableSymbolOverride?: string;
+  description?: string;
+}
+
 export default function Generator({ config }: GeneratorProps) {
   const [currentDate] = useState(new Date());
   const [drafts, setDrafts] = useState<InvoiceDraft[]>([]);
   const [lastInvoicedMonth, setLastInvoicedMonth] = useState(0);
   const [lastInvoicedMonthLoading, setLastInvoicedMonthLoading] = useState(true);
   const [extraItemsExpanded, setExtraItemsExpanded] = useState(true);
+  
+  // Track user edits separately to preserve them across regenerations
+  const userEditsRef = useRef<Map<string, DraftUserEdits>>(new Map());
   
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
@@ -89,8 +100,9 @@ export default function Generator({ config }: GeneratorProps) {
     reloadLastInvoicedMonth();
   }, [config.rootPath, currentDate]);
 
-  useEffect(() => {
-    if (loading) return;
+  // Calculate base drafts (without extra value) - only recalculates when config/invoiced month changes
+  const baseDrafts = useMemo(() => {
+    if (lastInvoicedMonthLoading) return [];
     
     const newDrafts: InvoiceDraft[] = [];
     const year = currentDate.getFullYear();
@@ -104,23 +116,14 @@ export default function Generator({ config }: GeneratorProps) {
       if (startMonth > endMonth) continue;
 
       let accumulatedValue = 0;
-      let accumulatedExtra = 0;
 
       for (let m = startMonth; m <= endMonth; m++) {
         const dateStr = `${year}-${m.toString().padStart(2, '0')}`;
         const salaryRule = ruleset.salaryRules.find(r => dateStr >= r.startDate && dateStr <= r.endDate) 
           || { value: 0, deduction: 0 };
         
-        let monthValue = salaryRule.value - salaryRule.deduction;
-        
-        let extraAddedThisMonth = 0;
-        if (m === endMonth && config.rulesets[0].id === ruleset.id) {
-          extraAddedThisMonth = proplatitTotalValue;
-          monthValue += extraAddedThisMonth;
-        }
-        
+        const monthValue = salaryRule.value - salaryRule.deduction;
         accumulatedValue += monthValue;
-        accumulatedExtra += extraAddedThisMonth;
 
         if (!isBillingMonth(m, ruleset)) {
           continue;
@@ -133,17 +136,7 @@ export default function Generator({ config }: GeneratorProps) {
         
         while (accumulatedValue >= config.maxInvoiceValue) {
           const amount = config.maxInvoiceValue;
-          let currentBase = accumulatedValue - accumulatedExtra;
-          let draftExtra = 0;
-          
-          if (currentBase >= amount) {
-            draftExtra = 0;
-          } else {
-            draftExtra = amount - Math.max(0, currentBase);
-          }
-          
           accumulatedValue -= amount;
-          accumulatedExtra -= draftExtra;
           
           const { invoiceNo } = getMonthDates(year, m, partIndex);
           const desc = ruleset.descriptions && ruleset.descriptions.length > 0 
@@ -176,7 +169,7 @@ export default function Generator({ config }: GeneratorProps) {
             label,
             periodLabel,
             monthSalary: salaryRule.value - salaryRule.deduction,
-            extraValue: draftExtra > 0 ? draftExtra : undefined
+            extraValue: undefined
           });
           partIndex++;
         }
@@ -186,16 +179,7 @@ export default function Generator({ config }: GeneratorProps) {
             // Carry over
           } else {
             const amount = accumulatedValue;
-            let currentBase = accumulatedValue - accumulatedExtra;
-            let draftExtra = 0;
-            if (currentBase >= amount) {
-              draftExtra = 0;
-            } else {
-              draftExtra = amount - Math.max(0, currentBase);
-            }
-            
             accumulatedValue = 0;
-            accumulatedExtra -= draftExtra;
             
             const { invoiceNo } = getMonthDates(year, m, partIndex);
             const desc = ruleset.descriptions && ruleset.descriptions.length > 0 
@@ -203,14 +187,15 @@ export default function Generator({ config }: GeneratorProps) {
               : "Služby";
             
             const periodLabel = getInvoiceLabel(year, m, ruleset);
-            let label = `${periodLabel} (${ruleset.name}) Remainder`;
+            let label = `${periodLabel} (${ruleset.name})`;
             
             if (isFlush) {
-              label = `${periodLabel} (${ruleset.name})`;
               if (totalParts > 1 && partIndex > 0) {
                 const remCount = totalParts - 1;
                 label += remCount === 1 ? " Remainder" : ` Remainder ${partIndex}/${remCount}`;
               }
+            } else if (partIndex > 0) {
+              label += " Remainder";
             }
 
             newDrafts.push({
@@ -227,15 +212,170 @@ export default function Generator({ config }: GeneratorProps) {
               label,
               periodLabel,
               monthSalary: salaryRule.value - salaryRule.deduction,
-              extraValue: draftExtra > 0 ? draftExtra : undefined
+              extraValue: undefined
             });
           }
         }
       }
     }
     
-    setDrafts(newDrafts);
-  }, [loading, lastInvoicedMonth, config, proplatitTotalValue, currentDate]);
+    return newDrafts;
+  }, [lastInvoicedMonthLoading, lastInvoicedMonth, config, currentDate]);
+
+  // Apply extra value to base drafts and merge with user edits
+  // This runs when base drafts change OR when extra value changes
+  useEffect(() => {
+    if (proplatitLoading || lastInvoicedMonthLoading) return;
+    
+    const applyExtraValueToDrafts = (base: InvoiceDraft[], extraValue: number): InvoiceDraft[] => {
+      if (base.length === 0) return [];
+      
+      // Find drafts for first ruleset (extra value only applies to first ruleset)
+      const firstRulesetId = config.rulesets[0]?.id;
+      if (!firstRulesetId) return base;
+      
+      // Separate first ruleset drafts from others
+      const firstRulesetDrafts = base.filter(d => d.rulesetId === firstRulesetId);
+      const otherDrafts = base.filter(d => d.rulesetId !== firstRulesetId);
+      
+      if (firstRulesetDrafts.length === 0) return base;
+      
+      // Find the last month's drafts in first ruleset (where extra value applies)
+      const lastMonth = Math.max(...firstRulesetDrafts.map(d => d.month));
+      const lastMonthDrafts = firstRulesetDrafts.filter(d => d.month === lastMonth);
+      const earlierDrafts = firstRulesetDrafts.filter(d => d.month < lastMonth);
+      
+      if (lastMonthDrafts.length === 0) return base;
+      
+      // Calculate total base value for last month
+      const baseTotal = lastMonthDrafts.reduce((sum, d) => sum + d.amount, 0);
+      const newTotal = baseTotal + extraValue;
+      
+      // Determine how many full invoices and remainder
+      const fullInvoiceCount = Math.floor(newTotal / config.maxInvoiceValue);
+      const remainder = newTotal % config.maxInvoiceValue;
+      
+      // Get template from first draft for creating new ones
+      const template = lastMonthDrafts[0];
+      const year = template.year;
+      const month = template.month;
+      const ruleset = config.rulesets.find(r => r.id === firstRulesetId)!;
+      
+      const newLastMonthDrafts: InvoiceDraft[] = [];
+      let extraRemaining = extraValue;
+      let baseRemaining = baseTotal;
+      
+      // Create full invoices
+      for (let i = 0; i < fullInvoiceCount; i++) {
+        const amount = config.maxInvoiceValue;
+        
+        // Calculate how much extra is in this invoice
+        let draftExtra = 0;
+        if (baseRemaining >= amount) {
+          draftExtra = 0;
+          baseRemaining -= amount;
+        } else {
+          draftExtra = amount - Math.max(0, baseRemaining);
+          baseRemaining = 0;
+          extraRemaining -= draftExtra;
+        }
+        
+        const { invoiceNo } = getMonthDates(year, month, i);
+        const periodLabel = getInvoiceLabel(year, month, ruleset);
+        
+        let label = `${periodLabel} (${ruleset.name})`;
+        if (i > 0) {
+          label += ` Part ${i + 1}`;
+        }
+        
+        newLastMonthDrafts.push({
+          id: `${firstRulesetId}-${year}-${month}-${i}`,
+          rulesetId: firstRulesetId,
+          year,
+          month,
+          index: i,
+          amount,
+          description: template.description,
+          invoiceNoOverride: invoiceNo,
+          variableSymbolOverride: invoiceNo,
+          status: 'pending',
+          label,
+          periodLabel,
+          monthSalary: template.monthSalary,
+          extraValue: draftExtra > 0 ? draftExtra : undefined
+        });
+      }
+      
+      // Create remainder invoice if any
+      if (remainder > 0) {
+        const partIndex = fullInvoiceCount;
+        const { invoiceNo } = getMonthDates(year, month, partIndex);
+        const periodLabel = getInvoiceLabel(year, month, ruleset);
+        
+        let label = `${periodLabel} (${ruleset.name})`;
+        if (partIndex > 0) {
+          label += " Remainder";
+        }
+        
+        // All remaining extra goes to remainder
+        const draftExtra = extraRemaining > 0 ? Math.min(extraRemaining, remainder) : undefined;
+        
+        newLastMonthDrafts.push({
+          id: `${firstRulesetId}-${year}-${month}-${partIndex}`,
+          rulesetId: firstRulesetId,
+          year,
+          month,
+          index: partIndex,
+          amount: remainder,
+          description: template.description,
+          invoiceNoOverride: invoiceNo,
+          variableSymbolOverride: invoiceNo,
+          status: 'pending',
+          label,
+          periodLabel,
+          monthSalary: template.monthSalary,
+          extraValue: draftExtra
+        });
+      }
+      
+      return [...earlierDrafts, ...newLastMonthDrafts, ...otherDrafts];
+    };
+    
+    // Apply extra value to base drafts
+    const draftsWithExtra = applyExtraValueToDrafts(baseDrafts, proplatitTotalValue);
+    
+    // Merge with existing drafts, preserving user edits and status
+    setDrafts(prevDrafts => {
+      // Build map of existing drafts for quick lookup
+      const existingMap = new Map(prevDrafts.map(d => [d.id, d]));
+      
+      return draftsWithExtra.map(newDraft => {
+        const existing = existingMap.get(newDraft.id);
+        const userEdits = userEditsRef.current.get(newDraft.id);
+        
+        if (existing) {
+          // Preserve user-edited fields and status from existing draft
+          return {
+            ...newDraft,
+            invoiceNoOverride: userEdits?.invoiceNoOverride ?? existing.invoiceNoOverride,
+            variableSymbolOverride: userEdits?.variableSymbolOverride ?? existing.variableSymbolOverride,
+            description: userEdits?.description ?? existing.description,
+            status: existing.status
+          };
+        } else if (userEdits) {
+          // New draft but we have saved user edits (shouldn't happen often)
+          return {
+            ...newDraft,
+            invoiceNoOverride: userEdits.invoiceNoOverride ?? newDraft.invoiceNoOverride,
+            variableSymbolOverride: userEdits.variableSymbolOverride ?? newDraft.variableSymbolOverride,
+            description: userEdits.description ?? newDraft.description
+          };
+        }
+        
+        return newDraft;
+      });
+    });
+  }, [baseDrafts, proplatitTotalValue, proplatitLoading, lastInvoicedMonthLoading, config.rulesets, config.maxInvoiceValue]);
 
   function isBillingMonth(month: number, ruleset: Ruleset): boolean {
     switch (ruleset.periodicity) {
@@ -390,6 +530,8 @@ export default function Generator({ config }: GeneratorProps) {
             await moveProplatitFile(config.rootPath, item.file.name);
           }
         }
+        // Clean up user edits for this draft
+        userEditsRef.current.delete(draft.id);
         setDrafts(ds => ds.map(d => d.id === draft.id ? { ...d, status: 'done' } : d));
       }
       
@@ -410,6 +552,8 @@ export default function Generator({ config }: GeneratorProps) {
 
   // Called when the Generate All modal completes - syncs UI with disk state
   const handleGenerateAllComplete = async () => {
+    // Clear user edits since we're reloading everything
+    userEditsRef.current.clear();
     // Reload both proplatit files and last invoiced month from disk
     // This will trigger drafts recalculation via useEffect
     await Promise.all([
@@ -505,7 +649,11 @@ export default function Generator({ config }: GeneratorProps) {
               <div>
                 <p className="text-xs font-medium" style={{ color: 'var(--accent-600)' }}>Total Value</p>
                 <p className="text-lg font-bold font-mono" style={{ color: 'var(--accent-700)' }}>
-                  {totalDraftValue.toLocaleString()} CZK
+                  <NumberFlow 
+                    value={totalDraftValue} 
+                    format={{ useGrouping: true }}
+                    suffix=" CZK"
+                  />
                 </p>
               </div>
             </div>
@@ -573,7 +721,11 @@ export default function Generator({ config }: GeneratorProps) {
                 className="text-lg font-bold font-mono"
                 style={{ color: 'var(--accent-600)' }}
               >
-                {proplatitTotalValue.toLocaleString()} Kč
+                <NumberFlow 
+                  value={proplatitTotalValue} 
+                  format={{ useGrouping: true }}
+                  suffix=" Kč"
+                />
               </div>
               <ChevronDown 
                 size={20} 
@@ -698,12 +850,25 @@ export default function Generator({ config }: GeneratorProps) {
                       type="text"
                       value={draft.invoiceNoOverride}
                       onChange={e => {
-                        const newD = [...drafts];
-                        newD[i].invoiceNoOverride = e.target.value;
-                        if (newD[i].variableSymbolOverride === draft.invoiceNoOverride) {
-                          newD[i].variableSymbolOverride = e.target.value;
+                        const newValue = e.target.value;
+                        // Track user edit
+                        const edits = userEditsRef.current.get(draft.id) || {};
+                        edits.invoiceNoOverride = newValue;
+                        if (draft.variableSymbolOverride === draft.invoiceNoOverride) {
+                          edits.variableSymbolOverride = newValue;
                         }
-                        setDrafts(newD);
+                        userEditsRef.current.set(draft.id, edits);
+                        
+                        setDrafts(ds => ds.map((d, idx) => {
+                          if (idx !== i) return d;
+                          return {
+                            ...d,
+                            invoiceNoOverride: newValue,
+                            variableSymbolOverride: d.variableSymbolOverride === draft.invoiceNoOverride 
+                              ? newValue 
+                              : d.variableSymbolOverride
+                          };
+                        }));
                       }}
                       className="flex-1 font-mono"
                     />
@@ -711,9 +876,15 @@ export default function Generator({ config }: GeneratorProps) {
                       type="text"
                       value={draft.variableSymbolOverride}
                       onChange={e => {
-                        const newD = [...drafts];
-                        newD[i].variableSymbolOverride = e.target.value;
-                        setDrafts(newD);
+                        const newValue = e.target.value;
+                        // Track user edit
+                        const edits = userEditsRef.current.get(draft.id) || {};
+                        edits.variableSymbolOverride = newValue;
+                        userEditsRef.current.set(draft.id, edits);
+                        
+                        setDrafts(ds => ds.map((d, idx) => 
+                          idx === i ? { ...d, variableSymbolOverride: newValue } : d
+                        ));
                       }}
                       className="flex-1 font-mono"
                     />
@@ -735,9 +906,15 @@ export default function Generator({ config }: GeneratorProps) {
                     )}
                     onChange={(opt) => {
                       if (opt) {
-                        const newD = [...drafts];
-                        newD[i].description = opt.value;
-                        setDrafts(newD);
+                        const newValue = opt.value;
+                        // Track user edit
+                        const edits = userEditsRef.current.get(draft.id) || {};
+                        edits.description = newValue;
+                        userEditsRef.current.set(draft.id, edits);
+                        
+                        setDrafts(ds => ds.map((d, idx) => 
+                          idx === i ? { ...d, description: newValue } : d
+                        ));
                       }
                     }}
                     options={(config.rulesets.find(r => r.id === draft.rulesetId)?.descriptions || []).map(d => ({ value: d, label: d }))}

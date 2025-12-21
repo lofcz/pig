@@ -15,6 +15,9 @@
   /* Typography */
   --font-sans: 'Outfit', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Form control sizing */
+  --control-height: 44px;
   
   /* Transitions */
   --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -425,18 +428,18 @@ select.select-sm {
   transform: translateY(-1px);
 }
 
-/* Dark mode - vibrant purple for success buttons */
+/* Dark mode - slate-indigo for success buttons */
 .dark .btn-success {
-  background: linear-gradient(135deg, #7c3aed, #5b21b6);
-  color: #f3e8ff;
-  box-shadow: 0 2px 8px -2px rgba(124, 58, 237, 0.5);
-  border: 1px solid rgba(167, 139, 250, 0.2);
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  color: #eef2ff;
+  box-shadow: 0 2px 8px -2px rgba(99, 102, 241, 0.5);
+  border: 1px solid rgba(129, 140, 248, 0.25);
 }
 
 .dark .btn-success:hover:not(:disabled) {
-  background: linear-gradient(135deg, #8b5cf6, #6d28d9);
-  box-shadow: 0 4px 12px -2px rgba(139, 92, 246, 0.5);
-  border-color: rgba(167, 139, 250, 0.4);
+  background: linear-gradient(135deg, #747bf2, #5b52e8);
+  box-shadow: 0 4px 12px -2px rgba(116, 123, 242, 0.5);
+  border-color: rgba(129, 140, 248, 0.45);
 }
 
 /* ============================================
@@ -464,24 +467,24 @@ select.select-sm {
 }
 
 .dark .validation-valid {
-  border-color: #a78bfa !important;
-  background-color: rgba(167, 139, 250, 0.12) !important;
+  border-color: #8da0f8 !important;
+  background-color: rgba(129, 140, 248, 0.12) !important;
 }
 
 .dark .validation-valid-icon {
-  color: #c4b5fd;
+  color: #a5b4fc;
 }
 
 .dark .validation-valid-border {
-  border-color: #a78bfa;
+  border-color: #8da0f8;
 }
 
 .dark .validation-valid-bg {
-  background-color: rgba(167, 139, 250, 0.2);
+  background-color: rgba(129, 140, 248, 0.2);
 }
 
 .dark .validation-valid-text {
-  color: #c4b5fd;
+  color: #a5b4fc;
 }
 
 /* Validation invalid (keeping error colors for clarity) */
@@ -514,17 +517,17 @@ select.select-sm {
 }
 
 .dark .draft-done {
-  border-left-color: #a78bfa;
+  border-left-color: #8da0f8;
 }
 
 .dark .draft-done-overlay {
-  background-color: rgba(167, 139, 250, 0.1);
+  background-color: rgba(129, 140, 248, 0.1);
 }
 
 .dark .draft-done-badge {
-  background-color: rgba(167, 139, 250, 0.25);
-  color: #c4b5fd;
-  border-color: rgba(167, 139, 250, 0.4);
+  background-color: rgba(129, 140, 248, 0.25);
+  color: #a5b4fc;
+  border-color: rgba(129, 140, 248, 0.4);
 }
 
 /* ============================================
@@ -566,10 +569,21 @@ select.select-sm {
   color: var(--accent-500);
 }
 
-/* Dark mode - use the vibrant gradient */
+/* Dark mode - use the slate-indigo gradient */
 .dark .ruleset-header {
-  background: linear-gradient(135deg, #5b21b6 0%, #7c3aed 50%, #6d28d9 100%);
+  background: linear-gradient(135deg, #3730a3 0%, #4f46e5 50%, #4338ca 100%);
   border-bottom: none;
+}
+
+/* Minimize invoices toggle - match ruleset header visually */
+.minimize-invoices-active {
+  background: linear-gradient(135deg, var(--accent-100), var(--accent-50)) !important;
+  border: 1px solid var(--accent-200);
+}
+
+.dark .minimize-invoices-active {
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.2), rgba(55, 48, 163, 0.15)) !important;
+  border: 1px solid rgba(79, 70, 229, 0.3);
 }
 
 .dark .ruleset-header .ruleset-icon {
@@ -593,7 +607,7 @@ select.select-sm {
 }
 
 .ruleset-header:focus-visible {
-  outline: 2px solid #a78bfa;
+  outline: 2px solid var(--accent-500);
   outline-offset: -2px;
 }
 
@@ -762,20 +776,20 @@ select.select-sm {
   will-change: transform;
 }
 
-/* Dark mode: Vibrant purple theme */
+/* Dark mode: Slate-indigo theme with purple tint */
 .dark .btn-cauldron {
-  --cauldron-deep: #2d1b4e;
-  --cauldron-purple: #5b21b6;
-  --cauldron-violet: #7c3aed;
-  --cauldron-orchid: #a855f7;
-  --cauldron-pink: #c084fc;
-  --cauldron-glow: rgba(139, 92, 246, 0.5);
+  --cauldron-deep: #1e1b4b;
+  --cauldron-purple: #3730a3;
+  --cauldron-violet: #4f46e5;
+  --cauldron-orchid: #6366f1;
+  --cauldron-pink: #818cf8;
+  --cauldron-glow: rgba(99, 102, 241, 0.5);
   
-  color: #f3e8ff;
-  border: 1px solid rgba(167, 139, 250, 0.3);
+  color: #eef2ff;
+  border: 1px solid rgba(129, 140, 248, 0.3);
   box-shadow: 
-    0 0 15px rgba(139, 92, 246, 0.2),
-    0 4px 12px -3px rgba(91, 33, 182, 0.3),
+    0 0 15px rgba(99, 102, 241, 0.2),
+    0 4px 12px -3px rgba(79, 70, 229, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
@@ -809,13 +823,13 @@ select.select-sm {
   mix-blend-mode: screen;
 }
 
-/* Dark mode: Purple glow */
+/* Dark mode: Slate-blue glow */
 .dark .cauldron-wrap::after {
   background: radial-gradient(
     ellipse at center,
-    rgba(167, 139, 250, 0.35) 0%,
-    rgba(139, 92, 246, 0.22) 35%,
-    rgba(139, 92, 246, 0.10) 55%,
+    rgba(129, 140, 248, 0.35) 0%,
+    rgba(99, 102, 241, 0.22) 35%,
+    rgba(99, 102, 241, 0.10) 55%,
     transparent 72%
   );
 }
@@ -836,7 +850,7 @@ select.select-sm {
 }
 
 .dark .cauldron-wrap.is-hovered:not(.is-disabled) .btn-cauldron {
-  border-color: rgba(196, 181, 253, 0.5);
+  border-color: rgba(165, 180, 252, 0.5);
 }
 
 .cauldron-wrap.is-hovered:not(.is-disabled) .btn-cauldron:active {
@@ -882,8 +896,8 @@ select.select-sm {
 
 .dark .btn-cauldron:active:not(:disabled) {
   box-shadow: 
-    0 0 10px rgba(139, 92, 246, 0.35),
-    0 2px 8px -2px rgba(91, 33, 182, 0.4),
+    0 0 10px rgba(99, 102, 241, 0.35),
+    0 2px 8px -2px rgba(79, 70, 229, 0.4),
     inset 0 2px 4px rgba(0, 0, 0, 0.15);
 }
 
@@ -927,14 +941,14 @@ select.select-sm {
 .dark .cauldron-bubble {
   background: radial-gradient(
     circle at 30% 30%,
-    rgba(221, 214, 254, 0.9),
-    rgba(167, 139, 250, 0.6) 40%,
-    rgba(139, 92, 246, 0.3) 70%,
+    rgba(224, 231, 255, 0.9),
+    rgba(165, 180, 252, 0.6) 40%,
+    rgba(99, 102, 241, 0.3) 70%,
     transparent
   );
   box-shadow: 
     inset 0 0 4px rgba(255, 255, 255, 0.4),
-    0 0 6px rgba(167, 139, 250, 0.5);
+    0 0 6px rgba(129, 140, 248, 0.5);
 }
 
 @keyframes bubbleFloat {

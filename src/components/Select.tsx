@@ -30,10 +30,13 @@ const buildStyles = <T, IsMulti extends boolean>(
       : state.isDisabled 
         ? 'var(--border-muted)'
         : 'var(--input-border)',
-    borderRadius: '8px',
-    padding: isSmall ? '0' : '0.125rem 0.25rem',
+    borderRadius: '10px',
+    padding: isSmall ? '0' : '0',
     fontSize: isSmall ? '0.8125rem' : '0.9375rem',
-    minHeight: isSmall ? '30px' : '40px',
+    // Lock height so Select matches DatePicker/Input heights everywhere
+    // (but allow multi-selects to grow vertically as tags wrap)
+    height: state.selectProps.isMulti ? undefined : 'var(--control-height)',
+    minHeight: 'var(--control-height)',
     boxShadow: state.isFocused ? '0 0 0 3px var(--input-ring)' : 'none',
     cursor: state.isDisabled ? 'not-allowed' : 'pointer',
     opacity: state.isDisabled ? 0.6 : 1,
@@ -47,7 +50,12 @@ const buildStyles = <T, IsMulti extends boolean>(
   
   valueContainer: (base) => ({
     ...base,
-    padding: isSmall ? '0 6px' : '2px 8px',
+    padding: isSmall ? '0.375rem 0.625rem' : '0.625rem 0.875rem',
+  }),
+
+  indicatorsContainer: (base) => ({
+    ...base,
+    height: '100%',
   }),
   
   singleValue: (base, state) => ({

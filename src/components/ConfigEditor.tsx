@@ -744,8 +744,8 @@ function RulesetsEditor({ rulesets, companies, onChange }: RulesetsEditorProps) 
 
             {/* Minimize Invoices Toggle */}
             <label 
-              className="flex items-center gap-3 p-4 rounded-lg cursor-pointer transition-colors"
-              style={{ backgroundColor: rs.minimizeInvoices ? 'var(--accent-50)' : 'var(--bg-muted)' }}
+              className={`flex items-center gap-3 p-4 rounded-lg cursor-pointer transition-colors ${rs.minimizeInvoices ? 'minimize-invoices-active' : ''}`}
+              style={{ backgroundColor: rs.minimizeInvoices ? undefined : 'var(--bg-muted)' }}
             >
               <input 
                 type="checkbox" 
