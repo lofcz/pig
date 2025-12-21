@@ -1,5 +1,5 @@
 import { readTextFile, writeTextFile, exists } from '@tauri-apps/plugin-fs';
-import { Config, DEFAULT_CONFIG } from '../types';
+import { Config, DEFAULT_CONFIG, ThemePreference } from '../types';
 
 const CONFIG_FILE = 'cfg.json';
 
@@ -58,5 +58,15 @@ export async function saveConfig(config: Config): Promise<void> {
   } catch (e) {
     console.error("Failed to save config:", e);
     throw e;
+  }
+}
+
+export async function saveTheme(theme: ThemePreference): Promise<void> {
+  try {
+    const config = await loadConfig();
+    config.theme = theme;
+    await saveConfig(config);
+  } catch (e) {
+    console.error("Failed to save theme:", e);
   }
 }

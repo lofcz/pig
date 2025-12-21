@@ -37,6 +37,8 @@ export interface Ruleset {
   templatePath?: string;
 }
 
+export type ThemePreference = 'light' | 'dark' | 'system';
+
 export interface Config {
   rootPath: string;
   companies: CompanyDetails[];
@@ -47,6 +49,7 @@ export interface Config {
     USD: number;
   };
   bankAccount: string;
+  theme?: ThemePreference;
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -118,5 +121,6 @@ export const DEFAULT_CONFIG: Config = {
     EUR: 25,
     USD: 23
   },
-  bankAccount: "164182402 / 0600"
+  bankAccount: "164182402 / 0600",
+  theme: 'system'
 };

@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/TextLayer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
+import { X, ZoomIn, ZoomOut, Loader2, FileWarning, FileText } from 'lucide-react';
+import { useEventListener } from '../hooks';
 
 // Set up the worker for Vite
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -27,15 +30,87 @@ export default function PDFPreviewModal({
   const [numPages, setNumPages] = useState<number | null>(null);
   const [scale, setScale] = useState(1.0);
   const [pdfReady, setPdfReady] = useState(false);
+  const [fakeProgress, setFakeProgress] = useState(0);
 
   // Reset state when opening new file
   useEffect(() => {
     if (isOpen) {
-        setScale(1.0);
-        setNumPages(null);
-        setPdfReady(false);
+      setScale(1.0);
+      setNumPages(null);
+      setPdfReady(false);
+      setFakeProgress(0);
     }
   }, [isOpen, pdfUrl]);
+
+  // Fake progress animation
+  useEffect(() => {
+    if (!isLoading) {
+      // Jump to 100% when done
+      if (fakeProgress > 0) setFakeProgress(100);
+      return;
+    }
+
+    setFakeProgress(0);
+    
+    const interval = setInterval(() => {
+      setFakeProgress(prev => {
+        // Slow down as we approach 90% (never reach 100% until actually done)
+        if (prev >= 90) return prev;
+        if (prev >= 70) return prev + Math.random() * 2;
+        if (prev >= 40) return prev + Math.random() * 5;
+        return prev + Math.random() * 10;
+      });
+    }, 200);
+
+    return () => clearInterval(interval);
+  }, [isLoading]);
+
+  // Disable body scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = '';
+      };
+    }
+  }, [isOpen]);
+
+  const canZoom = pdfReady && !isLoading;
+
+  // Zoom helpers
+  const zoomIn = useCallback(() => {
+    if (!canZoom) return;
+    setScale(s => Math.min(2.0, s + 0.1));
+  }, [canZoom]);
+  
+  const zoomOut = useCallback(() => {
+    if (!canZoom) return;
+    setScale(s => Math.max(0.5, s - 0.1));
+  }, [canZoom]);
+
+  // Handle keyboard shortcuts
+  useEventListener({
+    type: 'keydown',
+    handler: useCallback((e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === '+' || e.key === '=') zoomIn();
+      if (e.key === '-') zoomOut();
+    }, [onClose, zoomIn, zoomOut]),
+    enabled: isOpen
+  });
+
+  // Handle Ctrl+wheel zoom (same as +/- buttons)
+  useEventListener({
+    type: 'wheel',
+    handler: useCallback((e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      if (e.deltaY > 0) zoomOut();
+      else zoomIn();
+    }, [zoomIn, zoomOut]),
+    enabled: isOpen,
+    options: { passive: false }
+  });
 
   if (!isOpen) return null;
 
@@ -44,93 +119,239 @@ export default function PDFPreviewModal({
     setPdfReady(true);
   }
 
-  const canZoom = pdfReady && !isLoading;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden">
+  return createPortal(
+    <div 
+      className="modal-backdrop animate-fade-in"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div 
+        className="modal-content w-full max-w-5xl h-[90vh] flex flex-col"
+        style={{ backgroundColor: 'var(--bg-surface)' }}
+      >
         {/* Header */}
-        <div className="flex justify-between items-center p-4 border-b shrink-0">
-          <h3 className="text-xl font-bold text-gray-800">Invoice Preview</h3>
-          <div className="flex items-center gap-4">
-            <button 
-                onClick={() => setScale(s => Math.max(0.5, s - 0.1))}
-                className={`p-1 px-3 rounded transition-colors ${
-                    canZoom 
-                        ? 'bg-gray-200 hover:bg-gray-300 cursor-pointer' 
-                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                }`}
+        <div 
+          className="flex justify-between items-center px-6 py-4 shrink-0"
+          style={{ borderBottom: '1px solid var(--border-default)' }}
+        >
+          <div className="flex items-center gap-3">
+            <div 
+              className="w-10 h-10 rounded-lg flex items-center justify-center"
+              style={{ backgroundColor: 'var(--accent-100)' }}
+            >
+              <FileText size={20} style={{ color: 'var(--accent-600)' }} />
+            </div>
+            <div>
+              <h3 
+                className="text-lg font-bold"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                Invoice Preview
+              </h3>
+              {numPages && (
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                  {numPages} page{numPages > 1 ? 's' : ''}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Zoom Controls */}
+            <div 
+              className="flex items-center gap-1 p-1 rounded-lg mr-2"
+              style={{ backgroundColor: 'var(--bg-muted)' }}
+            >
+              <button 
+                onClick={zoomOut}
+                className={`btn btn-ghost btn-icon btn-sm ${!canZoom ? 'opacity-50 cursor-not-allowed' : ''}`}
                 disabled={!canZoom}
-            >−</button>
-            <span className="text-sm w-14 text-center font-mono">{Math.round(scale * 100)}%</span>
-            <button 
-                onClick={() => setScale(s => Math.min(2.0, s + 0.1))}
-                className={`p-1 px-3 rounded transition-colors ${
-                    canZoom 
-                        ? 'bg-gray-200 hover:bg-gray-300 cursor-pointer' 
-                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                }`}
+                title="Zoom Out (−)"
+              >
+                <ZoomOut size={18} />
+              </button>
+              
+              <span 
+                className="text-sm font-mono w-14 text-center font-medium"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                {Math.round(scale * 100)}%
+              </span>
+              
+              <button 
+                onClick={zoomIn}
+                className={`btn btn-ghost btn-icon btn-sm ${!canZoom ? 'opacity-50 cursor-not-allowed' : ''}`}
                 disabled={!canZoom}
-            >+</button>
+                title="Zoom In (+)"
+              >
+                <ZoomIn size={18} />
+              </button>
+            </div>
+
+            {/* Close Button */}
             <button 
               onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 ml-4"
+              className="btn btn-ghost btn-icon"
+              title="Close (Esc)"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <X size={22} />
             </button>
           </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-auto bg-gray-100 relative min-h-0">
-            <div className="w-full h-full flex flex-col items-center p-4">
-                {isLoading ? (
-                    <div className="flex-1 w-full flex flex-col items-center justify-center space-y-4">
-                        <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                        <div className="text-lg font-medium text-gray-700">Generating Preview...</div>
-                        {progressStep && (
-                            <div className="text-sm text-gray-500 animate-pulse">{progressStep}</div>
-                        )}
-                    </div>
-                ) : pdfUrl ? (
-                    <Document
-                        file={pdfUrl}
-                        onLoadSuccess={onDocumentLoadSuccess}
-                        loading={
-                            <div className="flex-1 w-full flex flex-col items-center justify-center">
-                                <div className="w-10 h-10 border-4 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
-                                <span className="mt-2 text-gray-500">Loading PDF...</span>
-                            </div>
-                        }
-                        error={
-                            <div className="flex-1 w-full flex flex-col items-center justify-center text-red-500">
-                                <p>Failed to load PDF.</p>
-                                <p className="text-sm text-gray-400 mt-2">Make sure the file exists and is valid.</p>
-                            </div>
-                        }
+        <div 
+          className="flex-1 overflow-auto min-h-0"
+          style={{ backgroundColor: 'var(--bg-muted)' }}
+        >
+          <div className="w-full h-full flex flex-col items-center p-6">
+            {isLoading ? (
+              <div className="flex-1 w-full flex flex-col items-center justify-center space-y-6">
+                {/* Loading Icon */}
+                <div 
+                  className="w-20 h-20 rounded-2xl flex items-center justify-center"
+                  style={{ backgroundColor: 'var(--accent-100)' }}
+                >
+                  <FileText size={40} style={{ color: 'var(--accent-500)' }} />
+                </div>
+                
+                <div className="text-center">
+                  <p 
+                    className="text-lg font-semibold mb-1"
+                    style={{ color: 'var(--text-primary)' }}
+                  >
+                    Generating Preview
+                  </p>
+                  {progressStep && (
+                    <p 
+                      className="text-sm animate-pulse"
+                      style={{ color: 'var(--text-muted)' }}
                     >
-                        {numPages && Array.from(new Array(numPages), (_, index) => (
-                            <div key={`page_${index + 1}`} className="mb-4 shadow-lg">
-                                <Page 
-                                    pageNumber={index + 1} 
-                                    scale={scale} 
-                                    renderTextLayer={true}
-                                    renderAnnotationLayer={true}
-                                    className="bg-white"
-                                />
-                            </div>
-                        ))}
-                    </Document>
-                ) : (
-                    <div className="flex-1 w-full flex items-center justify-center text-gray-500">
-                        No PDF available
+                      {progressStep}
+                    </p>
+                  )}
+                </div>
+
+                {/* Progress Bar */}
+                <div 
+                  className="w-48 h-1.5 rounded-full overflow-hidden"
+                  style={{ backgroundColor: 'var(--border-default)' }}
+                >
+                  <div 
+                    className="h-full rounded-full"
+                    style={{ 
+                      width: `${Math.min(fakeProgress, 100)}%`,
+                      background: 'linear-gradient(90deg, var(--accent-400), var(--accent-600))',
+                      transition: 'width 0.2s ease-out'
+                    }}
+                  />
+                </div>
+              </div>
+            ) : pdfUrl ? (
+              <Document
+                file={pdfUrl}
+                onLoadSuccess={onDocumentLoadSuccess}
+                loading={
+                  <div className="flex-1 w-full flex flex-col items-center justify-center">
+                    <Loader2 
+                      size={32} 
+                      className="animate-spin mb-3" 
+                      style={{ color: 'var(--accent-500)' }} 
+                    />
+                    <span style={{ color: 'var(--text-muted)' }}>Loading PDF...</span>
+                  </div>
+                }
+                error={
+                  <div className="flex-1 w-full flex flex-col items-center justify-center">
+                    <div 
+                      className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+                      style={{ backgroundColor: 'var(--error-100)' }}
+                    >
+                      <FileWarning size={32} style={{ color: 'var(--error-500)' }} />
                     </div>
-                )}
-            </div>
+                    <p 
+                      className="font-semibold"
+                      style={{ color: 'var(--error-600)' }}
+                    >
+                      Failed to load PDF
+                    </p>
+                    <p 
+                      className="text-sm mt-1"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      Make sure the file exists and is valid.
+                    </p>
+                  </div>
+                }
+              >
+                {numPages && Array.from(new Array(numPages), (_, index) => (
+                  <div 
+                    key={`page_${index + 1}`} 
+                    className="mb-6 rounded-lg overflow-hidden animate-fade-in"
+                    style={{ 
+                      boxShadow: 'var(--shadow-xl)',
+                      animationDelay: `${index * 100}ms`
+                    }}
+                  >
+                    <Page 
+                      pageNumber={index + 1} 
+                      scale={scale} 
+                      renderTextLayer={true}
+                      renderAnnotationLayer={true}
+                      className="bg-white"
+                    />
+                  </div>
+                ))}
+              </Document>
+            ) : (
+              <div className="flex-1 w-full flex flex-col items-center justify-center">
+                <div 
+                  className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+                  style={{ backgroundColor: 'var(--bg-subtle)' }}
+                >
+                  <FileText size={32} style={{ color: 'var(--text-muted)' }} />
+                </div>
+                <p style={{ color: 'var(--text-muted)' }}>No PDF available</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer with keyboard shortcuts hint */}
+        <div 
+          className="px-6 py-3 flex items-center justify-center gap-6 shrink-0"
+          style={{ 
+            borderTop: '1px solid var(--border-default)',
+            backgroundColor: 'var(--bg-muted)'
+          }}
+        >
+          <span className="text-xs" style={{ color: 'var(--text-subtle)' }}>
+            <kbd 
+              className="px-1.5 py-0.5 rounded text-xs font-mono"
+              style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-default)' }}
+            >
+              Esc
+            </kbd>
+            {' '}to close
+          </span>
+          <span className="text-xs" style={{ color: 'var(--text-subtle)' }}>
+            <kbd 
+              className="px-1.5 py-0.5 rounded text-xs font-mono"
+              style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-default)' }}
+            >
+              +
+            </kbd>
+            {' '}/
+            <kbd 
+              className="px-1.5 py-0.5 rounded text-xs font-mono"
+              style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-default)' }}
+            >
+              −
+            </kbd>
+            {' '}to zoom
+          </span>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

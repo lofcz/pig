@@ -1,25 +1,33 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Config, CompanyDetails, Ruleset } from '../types';
 import { mkdir, readFile } from '@tauri-apps/plugin-fs';
-import { openPath } from '@tauri-apps/plugin-opener';
-import { getProplatitFiles, FileEntry, moveProplatitFile, getExistingInvoiceCount, getMonthDates, getLastInvoicedMonth } from '../utils/logic';
+import { moveProplatitFile, getMonthDates, getLastInvoicedMonth } from '../utils/logic';
 import { generateInvoiceOdt, convertToPdf } from '../utils/odt';
 import PDFPreviewModal from './PDFPreviewModal';
+import GenerateAllModal from './GenerateAllModal';
+import ExtraItemsList from './ExtraItemsList';
+import { CauldronButton } from './CauldronButton';
+import { useProplatitFiles } from '../hooks';
+import { 
+  FileText, 
+  Sparkles, 
+  ChevronDown,
+  Banknote,
+  Calendar,
+  Hash,
+  FileSignature,
+  Eye,
+  CheckCircle2,
+  Loader2,
+  Package
+} from 'lucide-react';
 
 interface GeneratorProps {
   config: Config;
 }
 
-interface ProplatitItem {
-  file: FileEntry;
-  value: number;
-  currency: 'CZK' | 'EUR' | 'USD';
-  selected: boolean;
-  assignedDraftId?: string;
-}
-
 interface InvoiceDraft {
-  id: string; // Unique ID
+  id: string;
   rulesetId: string;
   year: number;
   month: number;
@@ -36,306 +44,252 @@ interface InvoiceDraft {
 }
 
 export default function Generator({ config }: GeneratorProps) {
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [proplatitFiles, setProplatitFiles] = useState<ProplatitItem[]>([]);
+  const [currentDate] = useState(new Date());
   const [drafts, setDrafts] = useState<InvoiceDraft[]>([]);
-  const [loading, setLoading] = useState(true);
   const [lastInvoicedMonth, setLastInvoicedMonth] = useState(0);
+  const [lastInvoicedMonthLoading, setLastInvoicedMonthLoading] = useState(true);
+  const [extraItemsExpanded, setExtraItemsExpanded] = useState(true);
   
-  // Preview modal state
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewStep, setPreviewStep] = useState<string>('');
+  
+  const [generateAllModalOpen, setGenerateAllModalOpen] = useState(false);
+  const [generateAllInvoicesSnapshot, setGenerateAllInvoicesSnapshot] = useState<Array<{ id: string; label: string; amount: number }>>([]);
 
-  useEffect(() => {
-    loadData();
-  }, [config.rootPath]);
+  // Use the custom hook for proplatit files
+  const {
+    files: proplatitFiles,
+    loading: proplatitLoading,
+    loadFiles: loadProplatitFiles,
+    updateItem: updateProplatitItem,
+    totalValue: proplatitTotalValue,
+    selectedFiles: selectedProplatitFiles
+  } = useProplatitFiles({
+    rootPath: config.rootPath,
+    exchangeRates: config.exchangeRates
+  });
 
-  async function loadData() {
-    setLoading(true);
-    const files = await getProplatitFiles(config.rootPath);
-    setProplatitFiles(files.map(f => ({
-      file: f,
-      value: 0,
-      currency: 'CZK',
-      selected: true,
-      assignedDraftId: undefined
-    })));
+  const loading = proplatitLoading || lastInvoicedMonthLoading;
+  const showPageLoading = loading && !generateAllModalOpen && !previewModalOpen;
 
-    // We assume standard tracking based on year folder for now
-    // If multiple rulesets exist, we might need more complex tracking.
-    // But existing logic `getLastInvoicedMonth` scans the folder for `faktura_..._MM...`
-    // It should pick up the max month regardless of ruleset if they share the folder.
+  // Reusable function to reload the last invoiced month from disk
+  const reloadLastInvoicedMonth = async () => {
+    setLastInvoicedMonthLoading(true);
     const yStr = currentDate.getFullYear().toString().slice(-2);
     const lastM = await getLastInvoicedMonth(config.rootPath, yStr);
     setLastInvoicedMonth(lastM);
-    setLoading(false);
-  }
+    setLastInvoicedMonthLoading(false);
+  };
 
-  const proplatitTotalValue = useMemo(() => {
-       return proplatitFiles.filter(p => p.selected).reduce((sum, p) => {
-          let val = p.value;
-          if (p.currency === 'EUR') val *= config.exchangeRates.EUR;
-          if (p.currency === 'USD') val *= config.exchangeRates.USD;
-          return sum + val;
-       }, 0);
-  }, [proplatitFiles, config.exchangeRates]);
-
-  // Main Logic for Draft Generation
+  // Load on mount and when config changes
   useEffect(() => {
-     if (loading) return;
-     
+    reloadLastInvoicedMonth();
+  }, [config.rootPath, currentDate]);
+
+  useEffect(() => {
+    if (loading) return;
+    
     const newDrafts: InvoiceDraft[] = [];
     const year = currentDate.getFullYear();
     const currentMonth = currentDate.getMonth() + 1;
-    
-    // We assume "scio" logic: single timeline.
-    // If multiple rulesets, we technically should track `lastInvoicedMonth` PER ruleset.
-    // But `getLastInvoicedMonth` is global for the folder.
-    // Let's iterate rulesets, but currently the file system doesn't separate them cleanly other than filename.
-    // We will assume all rulesets operate on the same timeline for now (startMonth -> endMonth).
 
     for (const ruleset of config.rulesets) {
-        const cutoffDay = ruleset.entitlementDay;
-        const endMonth = currentDate.getDate() > cutoffDay ? currentMonth - 1 : currentMonth - 2;
-        let startMonth = lastInvoicedMonth + 1;
+      const cutoffDay = ruleset.entitlementDay;
+      const endMonth = currentDate.getDate() > cutoffDay ? currentMonth - 1 : currentMonth - 2;
+      let startMonth = lastInvoicedMonth + 1;
+      
+      if (startMonth > endMonth) continue;
+
+      let accumulatedValue = 0;
+      let accumulatedExtra = 0;
+
+      for (let m = startMonth; m <= endMonth; m++) {
+        const dateStr = `${year}-${m.toString().padStart(2, '0')}`;
+        const salaryRule = ruleset.salaryRules.find(r => dateStr >= r.startDate && dateStr <= r.endDate) 
+          || { value: 0, deduction: 0 };
         
-        if (startMonth > endMonth) continue;
-
-        let accumulatedValue = 0;
+        let monthValue = salaryRule.value - salaryRule.deduction;
         
-        // Helper to track base value consumption for extra items attribution
-        let currentBasePool = 0; 
-        // We need to know how much base value is in the accumulator.
-        // accumulatedValue = Base + Extra.
-        // But extra is added at specific points.
-        // Simplified: The "Extra" part is the LAST part of the accumulator.
-        // So base = accumulatedValue - totalExtraInAccumulator.
-        
-        // However, accumulatedValue persists across loops if minimized.
-        // It's safer to track `extraPool` explicitly?
-        // Let's track `accumulatedExtra`.
-        let accumulatedExtra = 0;
-
-        for (let m = startMonth; m <= endMonth; m++) {
-            // 1. Calculate Monthly Value
-            const dateStr = `${year}-${m.toString().padStart(2, '0')}`;
-            const salaryRule = ruleset.salaryRules.find(r => dateStr >= r.startDate && dateStr <= r.endDate) 
-                || { value: 0, deduction: 0 };
-            
-            let monthValue = salaryRule.value - salaryRule.deduction;
-            
-            // Add proplatit to last month of generation window
-            let extraAddedThisMonth = 0;
-            if (m === endMonth && config.rulesets[0].id === ruleset.id) {
-                extraAddedThisMonth = proplatitTotalValue;
-                monthValue += extraAddedThisMonth;
-            }
-            
-            accumulatedValue += monthValue;
-            accumulatedExtra += extraAddedThisMonth;
-
-            // 2. Check if we should invoice this month based on Periodicity
-            if (!isBillingMonth(m, ruleset)) {
-                continue; // Keep accumulating
-            }
-            
-            // Determine if we are in flush mode (Minimize Invoices + Last Month)
-            const isFlush = ruleset.minimizeInvoices && (m === endMonth);
-            const totalParts = isFlush ? Math.ceil(accumulatedValue / config.maxInvoiceValue) : 0;
-
-            // Helper to distribute extra value
-            const generateDraft = (amount: number, index: number, isLast: boolean) => {
-                // Calculate how much of this invoice is Base vs Extra
-                // Strategy: Consume Base first, then Extra.
-                // Base Available = accumulatedValue (current) - accumulatedExtra.
-                // Wait, accumulatedValue DECREASES as we generate.
-                // accumulatedExtra should also decrease as we consume it.
-                // Base = Total - Extra.
-                
-                let draftExtra = 0;
-                const totalBase = accumulatedValue - accumulatedExtra; // Current total base available? 
-                // No, accumulatedValue is the amount BEFORE this invoice is subtracted? 
-                // In `while` loop, I subtract `amount` AFTER generation? No, before `newDrafts.push` in original code?
-                // Let's verify loop order.
-            };
-            
-            // 3. Generate Invoices from Accumulator
-            let partIndex = 0;
-            
-            // While we have enough for a max-value invoice
-            while (accumulatedValue >= config.maxInvoiceValue) {
-                const amount = config.maxInvoiceValue;
-                // Calculate composition
-                // We consume Base first.
-                // Base Available = accumulatedValue - accumulatedExtra.
-                // If Base Available >= amount, then Draft is all Base.
-                // If Base Available < amount, then Draft is (Base Available) Base + (amount - Base Available) Extra.
-                
-                let currentBase = accumulatedValue - accumulatedExtra;
-                let draftExtra = 0;
-                
-                if (currentBase >= amount) {
-                    draftExtra = 0;
-                } else {
-                    draftExtra = amount - Math.max(0, currentBase);
-                }
-                
-                // Update accumulators
-                accumulatedValue -= amount;
-                accumulatedExtra -= draftExtra;
-                
-                const { invoiceNo } = getMonthDates(year, m, partIndex);
-                const desc = ruleset.descriptions && ruleset.descriptions.length > 0 
-                    ? ruleset.descriptions[Math.floor(Math.random() * ruleset.descriptions.length)]
-                    : "Služby";
-
-                const periodLabel = getInvoiceLabel(year, m, ruleset);
-                let label = `${periodLabel} (${ruleset.name})`;
-                
-                if (isFlush) {
-                    if (totalParts > 1 && partIndex > 0) {
-                        const remCount = totalParts - 1;
-                        label += remCount === 1 ? " Remainder" : ` Remainder ${partIndex}/${remCount}`;
-                    }
-                } else if (m === endMonth && partIndex > 0) {
-                    label += ` Part ${partIndex + 1}`;
-                }
-
-                newDrafts.push({
-                    id: `${ruleset.id}-${year}-${m}-${partIndex}`,
-                    rulesetId: ruleset.id,
-                    year,
-                    month: m,
-                    index: partIndex,
-                    amount,
-                    description: desc,
-                    invoiceNoOverride: invoiceNo,
-                    variableSymbolOverride: invoiceNo,
-                    status: 'pending',
-                    label,
-                    periodLabel,
-                    monthSalary: salaryRule.value - salaryRule.deduction,
-                    extraValue: draftExtra > 0 ? draftExtra : undefined
-                });
-                partIndex++;
-            }
-            
-            // Remainder invoice
-            if (accumulatedValue > 0) {
-                 // If minimizeInvoices is ON, and this is NOT the last month, carry over.
-                 if (ruleset.minimizeInvoices && m !== endMonth) {
-                     // Carry over to next month
-                 } else {
-                     const amount = accumulatedValue;
-                     // Composition
-                     let currentBase = accumulatedValue - accumulatedExtra;
-                     let draftExtra = 0;
-                     if (currentBase >= amount) {
-                         draftExtra = 0;
-                     } else {
-                         draftExtra = amount - Math.max(0, currentBase);
-                     }
-                     
-                     accumulatedValue = 0;
-                     accumulatedExtra -= draftExtra;
-                     
-                     const { invoiceNo } = getMonthDates(year, m, partIndex);
-                     const desc = ruleset.descriptions && ruleset.descriptions.length > 0 
-                        ? ruleset.descriptions[Math.floor(Math.random() * ruleset.descriptions.length)]
-                        : "Služby";
-                     
-                     const periodLabel = getInvoiceLabel(year, m, ruleset);
-                     let label = `${periodLabel} (${ruleset.name}) Remainder`;
-                     
-                     if (isFlush) {
-                         label = `${periodLabel} (${ruleset.name})`;
-                         if (totalParts > 1 && partIndex > 0) {
-                             const remCount = totalParts - 1;
-                             label += remCount === 1 ? " Remainder" : ` Remainder ${partIndex}/${remCount}`;
-                         }
-                     }
-
-                     newDrafts.push({
-                        id: `${ruleset.id}-${year}-${m}-${partIndex}`,
-                        rulesetId: ruleset.id,
-                        year,
-                        month: m,
-                        index: partIndex,
-                        amount,
-                        description: desc,
-                        invoiceNoOverride: invoiceNo,
-                        variableSymbolOverride: invoiceNo,
-                        status: 'pending',
-                        label,
-                        periodLabel,
-                        monthSalary: salaryRule.value - salaryRule.deduction,
-                        extraValue: draftExtra > 0 ? draftExtra : undefined
-                    });
-                 }
-            }
+        let extraAddedThisMonth = 0;
+        if (m === endMonth && config.rulesets[0].id === ruleset.id) {
+          extraAddedThisMonth = proplatitTotalValue;
+          monthValue += extraAddedThisMonth;
         }
+        
+        accumulatedValue += monthValue;
+        accumulatedExtra += extraAddedThisMonth;
+
+        if (!isBillingMonth(m, ruleset)) {
+          continue;
+        }
+        
+        const isFlush = ruleset.minimizeInvoices && (m === endMonth);
+        const totalParts = isFlush ? Math.ceil(accumulatedValue / config.maxInvoiceValue) : 0;
+        
+        let partIndex = 0;
+        
+        while (accumulatedValue >= config.maxInvoiceValue) {
+          const amount = config.maxInvoiceValue;
+          let currentBase = accumulatedValue - accumulatedExtra;
+          let draftExtra = 0;
+          
+          if (currentBase >= amount) {
+            draftExtra = 0;
+          } else {
+            draftExtra = amount - Math.max(0, currentBase);
+          }
+          
+          accumulatedValue -= amount;
+          accumulatedExtra -= draftExtra;
+          
+          const { invoiceNo } = getMonthDates(year, m, partIndex);
+          const desc = ruleset.descriptions && ruleset.descriptions.length > 0 
+            ? ruleset.descriptions[Math.floor(Math.random() * ruleset.descriptions.length)]
+            : "Služby";
+
+          const periodLabel = getInvoiceLabel(year, m, ruleset);
+          let label = `${periodLabel} (${ruleset.name})`;
+          
+          if (isFlush) {
+            if (totalParts > 1 && partIndex > 0) {
+              const remCount = totalParts - 1;
+              label += remCount === 1 ? " Remainder" : ` Remainder ${partIndex}/${remCount}`;
+            }
+          } else if (m === endMonth && partIndex > 0) {
+            label += ` Part ${partIndex + 1}`;
+          }
+
+          newDrafts.push({
+            id: `${ruleset.id}-${year}-${m}-${partIndex}`,
+            rulesetId: ruleset.id,
+            year,
+            month: m,
+            index: partIndex,
+            amount,
+            description: desc,
+            invoiceNoOverride: invoiceNo,
+            variableSymbolOverride: invoiceNo,
+            status: 'pending',
+            label,
+            periodLabel,
+            monthSalary: salaryRule.value - salaryRule.deduction,
+            extraValue: draftExtra > 0 ? draftExtra : undefined
+          });
+          partIndex++;
+        }
+        
+        if (accumulatedValue > 0) {
+          if (ruleset.minimizeInvoices && m !== endMonth) {
+            // Carry over
+          } else {
+            const amount = accumulatedValue;
+            let currentBase = accumulatedValue - accumulatedExtra;
+            let draftExtra = 0;
+            if (currentBase >= amount) {
+              draftExtra = 0;
+            } else {
+              draftExtra = amount - Math.max(0, currentBase);
+            }
+            
+            accumulatedValue = 0;
+            accumulatedExtra -= draftExtra;
+            
+            const { invoiceNo } = getMonthDates(year, m, partIndex);
+            const desc = ruleset.descriptions && ruleset.descriptions.length > 0 
+              ? ruleset.descriptions[Math.floor(Math.random() * ruleset.descriptions.length)]
+              : "Služby";
+            
+            const periodLabel = getInvoiceLabel(year, m, ruleset);
+            let label = `${periodLabel} (${ruleset.name}) Remainder`;
+            
+            if (isFlush) {
+              label = `${periodLabel} (${ruleset.name})`;
+              if (totalParts > 1 && partIndex > 0) {
+                const remCount = totalParts - 1;
+                label += remCount === 1 ? " Remainder" : ` Remainder ${partIndex}/${remCount}`;
+              }
+            }
+
+            newDrafts.push({
+              id: `${ruleset.id}-${year}-${m}-${partIndex}`,
+              rulesetId: ruleset.id,
+              year,
+              month: m,
+              index: partIndex,
+              amount,
+              description: desc,
+              invoiceNoOverride: invoiceNo,
+              variableSymbolOverride: invoiceNo,
+              status: 'pending',
+              label,
+              periodLabel,
+              monthSalary: salaryRule.value - salaryRule.deduction,
+              extraValue: draftExtra > 0 ? draftExtra : undefined
+            });
+          }
+        }
+      }
     }
     
     setDrafts(newDrafts);
-
   }, [loading, lastInvoicedMonth, config, proplatitTotalValue, currentDate]);
 
   function isBillingMonth(month: number, ruleset: Ruleset): boolean {
-      switch (ruleset.periodicity) {
-          case 'monthly': return true;
-          case 'quarterly': return month % 3 === 0;
-          case 'yearly': return month === 12;
-          case 'custom_months': return month % (ruleset.periodicityCustomValue || 1) === 0;
-          case 'custom_days': return true; // Fallback to monthly
-          default: return true;
-      }
+    switch (ruleset.periodicity) {
+      case 'monthly': return true;
+      case 'quarterly': return month % 3 === 0;
+      case 'yearly': return month === 12;
+      case 'custom_months': return month % (ruleset.periodicityCustomValue || 1) === 0;
+      case 'custom_days': return true;
+      default: return true;
+    }
   }
 
   function getInvoiceLabel(year: number, month: number, ruleset: Ruleset): string {
-      const yearShort = year.toString().slice(-2);
-      
-      switch (ruleset.periodicity) {
-          case 'monthly':
-              return `${month}/${yearShort}`;
-          case 'quarterly':
-              const q = Math.ceil(month / 3);
-              return `Q${q} ${yearShort}`;
-          case 'yearly':
-              return `${year}`;
-          case 'custom_months':
-              const n = ruleset.periodicityCustomValue || 1;
-              const startM = month - n + 1;
-              const startMStr = startM.toString().padStart(2, '0');
-              const endMStr = month.toString().padStart(2, '0');
-              return `${startMStr}-${endMStr}/${yearShort}`;
-          default:
-              return `${month}/${yearShort}`;
-      }
+    const yearShort = year.toString().slice(-2);
+    
+    switch (ruleset.periodicity) {
+      case 'monthly':
+        return `${month}/${yearShort}`;
+      case 'quarterly':
+        const q = Math.ceil(month / 3);
+        return `Q${q} ${yearShort}`;
+      case 'yearly':
+        return `${year}`;
+      case 'custom_months':
+        const n = ruleset.periodicityCustomValue || 1;
+        const startM = month - n + 1;
+        const startMStr = startM.toString().padStart(2, '0');
+        const endMStr = month.toString().padStart(2, '0');
+        return `${startMStr}-${endMStr}/${yearShort}`;
+      default:
+        return `${month}/${yearShort}`;
+    }
   }
 
-  // Handle Generation
-  const generateAll = async () => {
-      for (const draft of drafts) {
-          if (draft.status === 'done') continue;
-          await handleGenerate(draft, false);
-      }
-      alert("All invoices generated!");
-      loadData();
+  const openGenerateAllModal = () => {
+    // Freeze the invoices list for the whole modal session so parent re-renders (sync)
+    // can't cause the modal to suddenly show "0 of 0".
+    setGenerateAllInvoicesSnapshot(
+      drafts
+        .filter(d => d.status !== 'done')
+        .map(d => ({ id: d.id, label: d.label, amount: d.amount }))
+    );
+    setGenerateAllModalOpen(true);
   };
 
   const handleGenerate = async (draft: InvoiceDraft, isPreview: boolean = false) => {
-    // Determine Ruleset
     const ruleset = config.rulesets.find(r => r.id === draft.rulesetId);
     if (!ruleset) { alert("Ruleset not found"); return undefined; }
 
     const isLastDraft = drafts[drafts.length - 1].id === draft.id;
-    const itemsToMove = (!isPreview && isLastDraft) ? proplatitFiles.filter(p => p.selected) : [];
+    const itemsToMove = (!isPreview && isLastDraft) ? selectedProplatitFiles : [];
 
     let day = "1";
     if (draft.invoiceNoOverride.length === 8) {
-        day = parseInt(draft.invoiceNoOverride.substring(0, 2)).toString();
+      day = parseInt(draft.invoiceNoOverride.substring(0, 2)).toString();
     }
 
     const issueDate = new Date(draft.year, draft.month - 1, parseInt(day));
@@ -345,24 +299,22 @@ export default function Generator({ config }: GeneratorProps) {
     const issueDateStr = `${issueDate.getDate()}. ${issueDate.getMonth() + 1}. ${issueDate.getFullYear()}`;
     const dueDateStr = `${dueDate.getDate()}. ${dueDate.getMonth() + 1}. ${dueDate.getFullYear()}`;
 
-    // Customer Resolution (Top -> Bottom)
     let customer: CompanyDetails | undefined;
     for (const rule of ruleset.rules) {
-        let match = false;
-        if (rule.condition === 'odd') match = (draft.month % 2 !== 0);
-        else if (rule.condition === 'even') match = (draft.month % 2 === 0);
-        else if (rule.condition === 'default') match = true;
-        
-        if (match) {
-            customer = config.companies.find(c => c.id === rule.companyId);
-            if (customer) break;
-        }
+      let match = false;
+      if (rule.condition === 'odd') match = (draft.month % 2 !== 0);
+      else if (rule.condition === 'even') match = (draft.month % 2 === 0);
+      else if (rule.condition === 'default') match = true;
+      
+      if (match) {
+        customer = config.companies.find(c => c.id === rule.companyId);
+        if (customer) break;
+      }
     }
     
     if (!customer) { alert(`No customer for ${draft.month}/${draft.year} in ruleset ${ruleset.name}`); return undefined; }
     
     const supplier = config.companies.find(c => c.isSupplier) || config.companies[0];
-    // Don't include "Kč" here - the template already has it after {{P_VALUE}}
     const amountStr = draft.amount.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     const replacements: Record<string, string> = {
@@ -372,7 +324,6 @@ export default function Generator({ config }: GeneratorProps) {
       '{{P_DUE}}': dueDateStr,
       '{{P_VS}}': draft.variableSymbolOverride,
       '{{P_ACC}}': config.bankAccount,
-      // Supplier (Dodavatel) - single block for current template
       '{{P_SUPPLIER}}': [
         supplier.name,
         supplier.street,
@@ -381,7 +332,6 @@ export default function Generator({ config }: GeneratorProps) {
         `IČ: ${supplier.ic}`,
         supplier.dic ? `DIČ: ${supplier.dic}` : ''
       ].filter(Boolean).join('\n'),
-      // Supplier individual fields (for templates that use them)
       '{{P_SUP_NAME}}': supplier.name,
       '{{P_SUP_STREET}}': supplier.street,
       '{{P_SUP_ZIP}}': supplier.zip,
@@ -389,7 +339,6 @@ export default function Generator({ config }: GeneratorProps) {
       '{{P_SUP_COUNTRY}}': supplier.country,
       '{{P_SUP_IC}}': supplier.ic,
       '{{P_SUP_DIC}}': supplier.dic || '',
-      // Customer (Odběratel) - single block for current template
       '{{P_CUSTOMER}}': [
         customer.name,
         customer.street,
@@ -398,7 +347,6 @@ export default function Generator({ config }: GeneratorProps) {
         `IČ: ${customer.ic}`,
         customer.dic ? `DIČ: ${customer.dic}` : ''
       ].filter(Boolean).join('\n'),
-      // Customer individual fields (for templates that use them)
       '{{P_CUST_NAME}}': customer.name,
       '{{P_CUST_STREET}}': customer.street,
       '{{P_CUST_ZIP}}': customer.zip,
@@ -406,7 +354,6 @@ export default function Generator({ config }: GeneratorProps) {
       '{{P_CUST_COUNTRY}}': customer.country,
       '{{P_CUST_IC}}': customer.ic,
       '{{P_CUST_DIC}}': customer.dic || '',
-      // Invoice details
       '{{P_DESC}}': draft.description,
       '{{P_VALUE}}': amountStr,
       '{{P_VAT}}': "0%"
@@ -423,207 +370,418 @@ export default function Generator({ config }: GeneratorProps) {
     const odtName = `${baseName}.odt`;
     
     const outputDir = isPreview 
-        ? `${config.rootPath}\\.preview`
-        : `${config.rootPath}\\${yearShort}`;
+      ? `${config.rootPath}\\.preview`
+      : `${config.rootPath}\\${yearShort}`;
 
     const outputPath = `${outputDir}\\${odtName}`;
     
     try {
-        await mkdir(outputDir, { recursive: true });
-        const templatePath = ruleset.templatePath || 'src/templates/template.odt';
-        await generateInvoiceOdt(templatePath, outputPath, replacements);
-        await convertToPdf(outputPath, outputDir);
-        
-        if (!isPreview) {
-            if (itemsToMove.length > 0) {
-                for (const item of itemsToMove) {
-                    await moveProplatitFile(config.rootPath, item.file.name);
-                }
-            }
-            setDrafts(ds => ds.map(d => d.id === draft.id ? { ...d, status: 'done' } : d));
+      await mkdir(outputDir, { recursive: true });
+      const templatePath = ruleset.templatePath || 'src/templates/template.odt';
+      await generateInvoiceOdt(templatePath, outputPath, replacements);
+      await convertToPdf(outputPath, outputDir);
+      
+      if (!isPreview) {
+        if (itemsToMove.length > 0) {
+          for (const item of itemsToMove) {
+            await moveProplatitFile(config.rootPath, item.file.name);
+          }
         }
-        
-        return outputPath.replace('.odt', '.pdf');
+        setDrafts(ds => ds.map(d => d.id === draft.id ? { ...d, status: 'done' } : d));
+      }
+      
+      return outputPath.replace('.odt', '.pdf');
     } catch (e) {
-        console.error(e);
-        alert(`Error generating ${baseName}: ${e}`);
-        return undefined;
+      console.error(e);
+      alert(`Error generating ${baseName}: ${e}`);
+      return undefined;
     }
   };
 
+  // Callback for the modal to generate a single invoice by ID
+  const handleGenerateById = async (draftId: string): Promise<string | undefined> => {
+    const draft = drafts.find(d => d.id === draftId);
+    if (!draft || draft.status === 'done') return undefined;
+    return handleGenerate(draft, false);
+  };
+
+  // Called when the Generate All modal completes - syncs UI with disk state
+  const handleGenerateAllComplete = async () => {
+    // Reload both proplatit files and last invoiced month from disk
+    // This will trigger drafts recalculation via useEffect
+    await Promise.all([
+      loadProplatitFiles(),
+      reloadLastInvoicedMonth()
+    ]);
+  };
+
   const handlePreview = async (draft: InvoiceDraft) => {
-      // Open modal immediately with loading state
-      setPreviewModalOpen(true);
-      setPreviewLoading(true);
-      setPreviewPdfUrl(null);
-      setPreviewStep('Preparing invoice template...');
+    setPreviewModalOpen(true);
+    setPreviewLoading(true);
+    setPreviewPdfUrl(null);
+    setPreviewStep('Preparing invoice template...');
+    
+    try {
+      setPreviewStep('Generating ODT document...');
+      await new Promise(r => setTimeout(r, 100));
       
-      try {
-          setPreviewStep('Generating ODT document...');
-          // Small delay to show progress step
-          await new Promise(r => setTimeout(r, 100));
-          
-          setPreviewStep('Converting to PDF...');
-          const path = await handleGenerate(draft, true);
-          
-          if (path) {
-              setPreviewStep('Loading preview...');
-              // Read PDF as binary and create blob URL
-              const pdfData = await readFile(path);
-              const blob = new Blob([pdfData], { type: 'application/pdf' });
-              const url = URL.createObjectURL(blob);
-              setPreviewPdfUrl(url);
-          }
-      } catch (e) {
-          console.error('Preview failed:', e);
-      } finally {
-          setPreviewLoading(false);
-          setPreviewStep('');
+      setPreviewStep('Converting to PDF...');
+      const path = await handleGenerate(draft, true);
+      
+      if (path) {
+        setPreviewStep('Loading preview...');
+        const pdfData = await readFile(path);
+        const blob = new Blob([pdfData], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        setPreviewPdfUrl(url);
       }
+    } catch (e) {
+      console.error('Preview failed:', e);
+    } finally {
+      setPreviewLoading(false);
+      setPreviewStep('');
+    }
   };
   
   const closePreviewModal = () => {
-      // Revoke blob URL to free memory
-      if (previewPdfUrl) {
-          URL.revokeObjectURL(previewPdfUrl);
-      }
-      setPreviewModalOpen(false);
-      setPreviewPdfUrl(null);
-      setPreviewLoading(false);
-      setPreviewStep('');
+    if (previewPdfUrl) {
+      URL.revokeObjectURL(previewPdfUrl);
+    }
+    setPreviewModalOpen(false);
+    setPreviewPdfUrl(null);
+    setPreviewLoading(false);
+    setPreviewStep('');
   };
-
 
   const totalDraftValue = drafts.reduce((sum, d) => sum + d.amount, 0);
 
   return (
-    <div className="p-6 bg-white min-h-screen">
-       <div className="flex justify-between items-center mb-6">
-           <h2 className="text-3xl font-bold text-gray-800">Pending Invoices</h2>
-           <div className="flex items-center gap-4">
-             {drafts.length > 0 && (
-                 <div className="text-sm text-gray-500 text-right leading-tight">
-                     <div className="font-bold text-gray-700">{totalDraftValue.toLocaleString()} CZK</div>
-                     <div>in {drafts.length} invoices</div>
-                 </div>
-             )}
-             <button 
-               onClick={generateAll}
-               className="px-6 py-3 bg-green-600 text-white font-bold rounded shadow hover:bg-green-700"
-             >
-               Generate All
-             </button>
-           </div>
-       </div>
+    <div className="p-6 lg:p-8">
+      {showPageLoading ? (
+        <div className="p-8 flex items-center justify-center min-h-[400px]">
+          <div className="flex flex-col items-center gap-4">
+            <Loader2 size={32} className="animate-spin" style={{ color: 'var(--accent-500)' }} />
+            <p style={{ color: 'var(--text-muted)' }} className="text-sm font-medium">Loading invoices...</p>
+          </div>
+        </div>
+      ) : (
+      <>
+        {/* Page Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+        <div>
+          <h2 
+            className="text-2xl lg:text-3xl font-bold mb-1"
+            style={{ color: 'var(--text-primary)' }}
+          >
+            Pending Invoices
+          </h2>
+          <p 
+            className="text-sm"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            {drafts.length > 0 
+              ? `${drafts.length} invoice${drafts.length > 1 ? 's' : ''} ready for generation`
+              : 'No pending invoices at this time'
+            }
+          </p>
+        </div>
 
-       {drafts.length > 0 && (
-           <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded text-blue-800">
-               <span className="font-bold">Billing Periods:</span> {Array.from(new Set(drafts.map(d => d.periodLabel))).join(', ')}
-           </div>
-       )}
+        {drafts.length > 0 && (
+          <div className="flex items-center gap-3">
+            {/* Total Summary */}
+            <div 
+              className="card px-4 py-3 flex items-center gap-3"
+              style={{ backgroundColor: 'var(--accent-50)' }}
+            >
+              <div 
+                className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: 'var(--accent-100)' }}
+              >
+                <Banknote size={20} style={{ color: 'var(--accent-600)' }} />
+              </div>
+              <div>
+                <p className="text-xs font-medium" style={{ color: 'var(--accent-600)' }}>Total Value</p>
+                <p className="text-lg font-bold font-mono" style={{ color: 'var(--accent-700)' }}>
+                  {totalDraftValue.toLocaleString()} CZK
+                </p>
+              </div>
+            </div>
 
-       {proplatitFiles.length > 0 && (
-         <div className="mb-8 p-4 border rounded bg-gray-50">
-             <h3 className="font-bold mb-2">Extra items</h3>
-             {proplatitFiles.map((p, i) => (
-                 <div key={i} className="flex gap-4 items-center">
-                     <span 
-                        className="text-blue-600 underline cursor-pointer hover:text-blue-800"
-                        onClick={() => openPath(p.file.path)}
-                     >
-                        {p.file.name}
-                     </span>
-                     <input type="number" className="border p-1 w-24" value={p.value} onChange={e => {
-                         const newF = [...proplatitFiles];
-                         newF[i].value = Number(e.target.value);
-                         setProplatitFiles(newF);
-                     }} />
-                     <select className="border p-1" value={p.currency} onChange={e => {
-                         const newF = [...proplatitFiles];
-                         newF[i].currency = e.target.value as any;
-                         setProplatitFiles(newF);
-                     }}><option>CZK</option><option>EUR</option><option>USD</option></select>
-                     <label><input type="checkbox" checked={p.selected} onChange={e => {
-                         const newF = [...proplatitFiles];
-                         newF[i].selected = e.target.checked;
-                         setProplatitFiles(newF);
-                     }} /> Include</label>
-                 </div>
-             ))}
-             <div className="mt-2 text-right font-bold text-blue-600">Total Extra: {proplatitTotalValue.toLocaleString()} Kč</div>
-         </div>
-       )}
+            {/* Generate All Button */}
+            <CauldronButton onClick={openGenerateAllModal}>
+              <Sparkles size={18} className="flex-shrink-0" />
+              <span>Generate All</span>
+            </CauldronButton>
+          </div>
+        )}
+      </div>
 
-       <div className="space-y-8">
-           {drafts.length === 0 && <p className="text-gray-500 italic">No pending invoices found.</p>}
-           {drafts.map((draft, i) => (
-               <div key={draft.id} className="border rounded shadow-sm p-4 bg-white relative">
-                   {draft.status === 'done' && <div className="absolute inset-0 bg-green-50/80 flex items-center justify-center font-bold text-green-700 text-xl z-10">Generated</div>}
-                   <div className="flex justify-between mb-2">
-                       <h3 
-                           className="font-bold text-lg text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
-                           onClick={() => handlePreview(draft)}
-                       >
-                           {draft.label}
-                       </h3>
-                       <div className="font-mono text-xl">
-                           {draft.amount.toLocaleString()} Kč
-                           
-                           {draft.extraValue ? (
-                               <span className="text-sm text-gray-500 ml-2">
-                                   {(draft.amount - draft.extraValue) > 0 
-                                     ? `(${(draft.amount - draft.extraValue).toLocaleString()} remainder + ${draft.extraValue.toLocaleString()} extra)`
-                                     : `(${draft.extraValue.toLocaleString()} extra)`
-                                   }
-                               </span>
-                           ) : (
-                               draft.monthSalary > draft.amount && (
-                                   <span className="text-sm text-gray-500 ml-2">
-                                       / {draft.monthSalary.toLocaleString()} Kč (split)
-                                   </span>
-                               )
-                           )}
-                       </div>
-                   </div>
-                   <div className="grid grid-cols-2 gap-4">
-                       <div>
-                           <label className="text-xs text-gray-500 font-bold">Number / VS</label>
-                           <div className="flex gap-2">
-                               <input className="border p-1 w-full rounded" value={draft.invoiceNoOverride} onChange={e => {
-                                   const newD = [...drafts];
-                                   newD[i].invoiceNoOverride = e.target.value;
-                                   if (newD[i].variableSymbolOverride === draft.invoiceNoOverride) newD[i].variableSymbolOverride = e.target.value;
-                                   setDrafts(newD);
-                               }} />
-                               <input className="border p-1 w-full rounded" value={draft.variableSymbolOverride} onChange={e => {
-                                   const newD = [...drafts];
-                                   newD[i].variableSymbolOverride = e.target.value;
-                                   setDrafts(newD);
-                               }} />
-                           </div>
-                       </div>
-                       <div>
-                           <label className="text-xs text-gray-500 font-bold">Description</label>
-                           <select className="border p-1 w-full rounded" value={draft.description} onChange={e => {
-                               const newD = [...drafts];
-                               newD[i].description = e.target.value;
-                               setDrafts(newD);
-                           }}>
-                               {(config.rulesets.find(r => r.id === draft.rulesetId)?.descriptions || []).map(d => <option key={d} value={d}>{d}</option>)}
-                           </select>
-                       </div>
-                   </div>
-               </div>
-           ))}
-       </div>
+      {/* Billing Period Badge */}
+      {drafts.length > 0 && (
+        <div 
+          className="card mb-6 px-5 py-4 flex items-center gap-3"
+          style={{ borderLeft: '4px solid var(--accent-500)' }}
+        >
+          <div 
+            className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+            style={{ backgroundColor: 'var(--accent-100)' }}
+          >
+            <Calendar size={16} style={{ color: 'var(--accent-600)' }} />
+          </div>
+          <div>
+            <span className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>
+              Billing Periods:
+            </span>
+            <span className="ml-2 font-semibold" style={{ color: 'var(--text-primary)' }}>
+              {Array.from(new Set(drafts.map(d => d.periodLabel))).join(', ')}
+            </span>
+          </div>
+        </div>
+      )}
 
-       <PDFPreviewModal 
-         isOpen={previewModalOpen}
-         onClose={closePreviewModal}
-         pdfUrl={previewPdfUrl}
-         isLoading={previewLoading}
-         progressStep={previewStep}
-       />
+      {/* Extra Items Section - Accordion */}
+      {proplatitFiles.length > 0 && (
+        <div className="card mb-8 overflow-hidden">
+          {/* Accordion Header */}
+          <button 
+            onClick={() => setExtraItemsExpanded(!extraItemsExpanded)}
+            className="w-full px-5 py-4 flex items-center justify-between cursor-pointer transition-colors hover:opacity-90"
+            style={{ 
+              backgroundColor: 'var(--bg-muted)',
+              borderBottom: extraItemsExpanded ? '1px solid var(--border-default)' : 'none'
+            }}
+          >
+            <div className="flex items-center gap-3">
+              <div 
+                className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: 'var(--accent-100)' }}
+              >
+                <Package size={16} style={{ color: 'var(--accent-600)' }} />
+              </div>
+              <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+                Extra Items
+              </h3>
+              <span className="badge badge-primary">
+                {proplatitFiles.length}
+              </span>
+            </div>
+            <div className="flex items-center gap-4">
+              <div 
+                className="text-lg font-bold font-mono"
+                style={{ color: 'var(--accent-600)' }}
+              >
+                {proplatitTotalValue.toLocaleString()} Kč
+              </div>
+              <ChevronDown 
+                size={20} 
+                style={{ 
+                  color: 'var(--text-muted)',
+                  transform: extraItemsExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.2s ease'
+                }} 
+              />
+            </div>
+          </button>
+
+          {/* Accordion Content */}
+          <div 
+            style={{ 
+              maxHeight: extraItemsExpanded ? '1000px' : '0',
+              opacity: extraItemsExpanded ? 1 : 0,
+              overflow: 'hidden',
+              transition: 'max-height 0.3s ease, opacity 0.2s ease'
+            }}
+          >
+            <ExtraItemsList
+              items={proplatitFiles}
+              onUpdateItem={updateProplatitItem}
+            />
+          </div>
+        </div>
+      )}
+
+        {/* Invoice Drafts */}
+        <div className="space-y-4">
+          {drafts.length === 0 && (
+            <div className="card p-12 flex flex-col items-center justify-center text-center">
+              <div
+                className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+                style={{ backgroundColor: 'var(--bg-muted)' }}
+              >
+                <FileText size={32} style={{ color: 'var(--text-muted)' }} />
+              </div>
+              <p className="text-lg font-medium" style={{ color: 'var(--text-secondary)' }}>
+                No pending invoices
+              </p>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+                All invoices have been generated or it's too early in the billing period.
+              </p>
+            </div>
+          )}
+
+        {drafts.map((draft, i) => (
+          <div 
+            key={draft.id} 
+            className="card overflow-hidden card-hover relative"
+            style={{ 
+              borderLeft: draft.status === 'done' 
+                ? '4px solid var(--success-500)' 
+                : '4px solid var(--accent-500)'
+            }}
+          >
+            {/* Generated Overlay */}
+            {draft.status === 'done' && (
+              <div 
+                className="absolute inset-0 flex items-center justify-center z-10"
+                style={{ backgroundColor: 'rgba(var(--success-500), 0.1)' }}
+              >
+                <div 
+                  className="flex items-center gap-2 px-6 py-3 rounded-full"
+                  style={{ 
+                    backgroundColor: 'var(--success-100)',
+                    color: 'var(--success-700)'
+                  }}
+                >
+                  <CheckCircle2 size={20} />
+                  <span className="font-bold">Generated</span>
+                </div>
+              </div>
+            )}
+
+            <div className="p-5">
+              {/* Header Row */}
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <button
+                    onClick={() => handlePreview(draft)}
+                    className="group flex items-center gap-2 text-xl font-bold transition-colors"
+                    style={{ color: 'var(--accent-600)' }}
+                  >
+                    <FileSignature size={22} />
+                    <span className="group-hover:underline">{draft.label}</span>
+                    <Eye 
+                      size={16} 
+                      className="opacity-0 group-hover:opacity-100 transition-opacity" 
+                    />
+                  </button>
+                  <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+                    Click to preview invoice
+                  </p>
+                </div>
+
+                <div className="text-right">
+                  <div 
+                    className="text-2xl font-bold font-mono"
+                    style={{ color: 'var(--text-primary)' }}
+                  >
+                    {draft.amount.toLocaleString()} Kč
+                  </div>
+                  
+                  {draft.extraValue ? (
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                      {(draft.amount - draft.extraValue) > 0 
+                        ? `${(draft.amount - draft.extraValue).toLocaleString()} + ${draft.extraValue.toLocaleString()} extra`
+                        : `${draft.extraValue.toLocaleString()} extra`
+                      }
+                    </p>
+                  ) : (
+                    draft.amount === config.maxInvoiceValue && draft.monthSalary > draft.amount && (
+                      <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                        / {draft.monthSalary.toLocaleString()} Kč (split)
+                      </p>
+                    )
+                  )}
+                </div>
+              </div>
+
+              {/* Form Fields */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div>
+                  <label 
+                    className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide mb-2"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    <Hash size={14} />
+                    Number / VS
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={draft.invoiceNoOverride}
+                      onChange={e => {
+                        const newD = [...drafts];
+                        newD[i].invoiceNoOverride = e.target.value;
+                        if (newD[i].variableSymbolOverride === draft.invoiceNoOverride) {
+                          newD[i].variableSymbolOverride = e.target.value;
+                        }
+                        setDrafts(newD);
+                      }}
+                      className="flex-1 font-mono"
+                    />
+                    <input
+                      type="text"
+                      value={draft.variableSymbolOverride}
+                      onChange={e => {
+                        const newD = [...drafts];
+                        newD[i].variableSymbolOverride = e.target.value;
+                        setDrafts(newD);
+                      }}
+                      className="flex-1 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label 
+                    className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide mb-2"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    <FileText size={14} />
+                    Description
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={draft.description}
+                      onChange={e => {
+                        const newD = [...drafts];
+                        newD[i].description = e.target.value;
+                        setDrafts(newD);
+                      }}
+                      className="w-full"
+                    >
+                      {(config.rulesets.find(r => r.id === draft.rulesetId)?.descriptions || []).map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+        </div>
+      </>
+      )}
+
+      <PDFPreviewModal
+        isOpen={previewModalOpen}
+        onClose={closePreviewModal}
+        pdfUrl={previewPdfUrl}
+        isLoading={previewLoading}
+        progressStep={previewStep}
+      />
+
+      <GenerateAllModal
+        isOpen={generateAllModalOpen}
+        onClose={() => {
+          setGenerateAllModalOpen(false);
+          setGenerateAllInvoicesSnapshot([]);
+        }}
+        invoices={generateAllInvoicesSnapshot}
+        onGenerateInvoice={handleGenerateById}
+        rootPath={config.rootPath}
+        onComplete={handleGenerateAllComplete}
+      />
     </div>
   );
 }
