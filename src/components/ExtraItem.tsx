@@ -1,29 +1,31 @@
-import { useState, useEffect, memo } from 'react';
+import { useState, useEffect, memo, useMemo } from 'react';
 import { Receipt, Loader2 } from 'lucide-react';
 import { openPath } from '@tauri-apps/plugin-opener';
 import { Select, SelectOption, findOption } from './Select';
 import styles from './ExtraItem.module.css';
+import { Currency } from '../types';
 
-type Currency = 'CZK' | 'EUR' | 'USD';
-
-const CURRENCY_OPTIONS: SelectOption<Currency>[] = [
-  { value: 'CZK', label: 'CZK' },
-  { value: 'EUR', label: 'EUR' },
-  { value: 'USD', label: 'USD' },
-];
+const ALL_CURRENCIES: Currency[] = ['CZK', 'EUR', 'USD'];
 
 interface ExtraItemProps {
   fileName: string;
   filePath: string;
   value: number;
   currency: Currency;
+  primaryCurrency: Currency;
   isAnalyzing?: boolean;
   onUpdate: (value: number, currency: Currency, selected: boolean) => void;
 }
 
-function ExtraItem({ fileName, filePath, value, currency, isAnalyzing, onUpdate }: ExtraItemProps) {
+function ExtraItem({ fileName, filePath, value, currency, primaryCurrency, isAnalyzing, onUpdate }: ExtraItemProps) {
   const [localValue, setLocalValue] = useState(value === 0 ? '' : String(value));
   const [isFocused, setIsFocused] = useState(false);
+  
+  // Order currency options with primary currency first
+  const currencyOptions: SelectOption<Currency>[] = useMemo(() => {
+    const ordered = [primaryCurrency, ...ALL_CURRENCIES.filter(c => c !== primaryCurrency)];
+    return ordered.map(c => ({ value: c, label: c }));
+  }, [primaryCurrency]);
   
   useEffect(() => {
     setLocalValue(value === 0 ? '' : String(value));
@@ -87,9 +89,9 @@ function ExtraItem({ fileName, filePath, value, currency, isAnalyzing, onUpdate 
 
       <div className={styles.currencySelect}>
         <Select<Currency>
-          value={findOption(CURRENCY_OPTIONS, currency)}
+          value={findOption(currencyOptions, currency)}
           onChange={handleCurrencyChange}
-          options={CURRENCY_OPTIONS}
+          options={currencyOptions}
           isSearchable={false}
           size="sm"
           isDisabled={isAnalyzing}

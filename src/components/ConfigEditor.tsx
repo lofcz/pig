@@ -256,6 +256,7 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
           <RulesetsEditor 
             rulesets={localConfig.rulesets}
             companies={localConfig.companies}
+            primaryCurrency={localConfig.primaryCurrency}
             onChange={rulesets => setLocalConfig({...localConfig, rulesets})}
           />
         )}

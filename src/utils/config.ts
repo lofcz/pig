@@ -43,33 +43,8 @@ export async function loadConfig(): Promise<Config> {
           }));
       }
 
-      // Ensure contacts array exists (migration for older configs)
-      if (!loaded.contacts) {
-        loaded.contacts = [];
-      }
-
-      // Migration: Move bankAccount from Config to supplier
-      if (loaded.bankAccount && loaded.companies) {
-        const supplier = loaded.companies.find((c: any) => c.isSupplier);
-        if (supplier && !supplier.bankAccount) {
-          console.log("Migrating bankAccount to supplier...");
-          supplier.bankAccount = loaded.bankAccount;
-        }
-        delete loaded.bankAccount;
-      }
-
-      // Migration: Move maxInvoiceValue from Config to rulesets
-      if (loaded.maxInvoiceValue !== undefined && loaded.rulesets) {
-        console.log("Migrating maxInvoiceValue to rulesets...");
-        loaded.rulesets = loaded.rulesets.map((r: any) => ({
-          ...r,
-          maxInvoiceValue: r.maxInvoiceValue ?? loaded.maxInvoiceValue
-        }));
-        delete loaded.maxInvoiceValue;
-      }
-
       // Merge with default to ensure all fields exist
-      return { ...DEFAULT_CONFIG, ...loaded };
+      return { ...DEFAULT_CONFIG, ...loaded, exchangeRates: { ...DEFAULT_CONFIG.exchangeRates, ...loaded.exchangeRates } };
     }
   } catch (e) {
     console.warn("Config file not found or invalid, using defaults:", e);

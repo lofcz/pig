@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Ruleset, CompanyDetails, SalaryRule, CustomerRule } from '../types';
+import { Ruleset, CompanyDetails, SalaryRule, CustomerRule, Currency } from '../types';
 import { DragDropProvider, DragOverlay } from '@dnd-kit/react';
 import { useSortable } from '@dnd-kit/react/sortable';
 import { move } from '@dnd-kit/helpers';
@@ -43,10 +43,11 @@ const CONDITION_OPTIONS: SelectOption[] = [
 interface RulesetsEditorProps {
   rulesets: Ruleset[];
   companies: CompanyDetails[];
+  primaryCurrency: Currency;
   onChange: (r: Ruleset[]) => void;
 }
 
-export function RulesetsEditor({ rulesets, companies, onChange }: RulesetsEditorProps) {
+export function RulesetsEditor({ rulesets, companies, primaryCurrency, onChange }: RulesetsEditorProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set(rulesets.map(r => r.id)));
   const [hasInteracted, setHasInteracted] = useState(false);
   
@@ -81,6 +82,7 @@ export function RulesetsEditor({ rulesets, companies, onChange }: RulesetsEditor
             isExpanded={isExpanded}
             hasInteracted={hasInteracted}
             companies={companies}
+            primaryCurrency={primaryCurrency}
             onToggle={() => toggleExpanded(rs.id)}
             onUpdate={updateRuleset}
           />
@@ -98,11 +100,12 @@ interface RulesetCardProps {
   isExpanded: boolean;
   hasInteracted: boolean;
   companies: CompanyDetails[];
+  primaryCurrency: Currency;
   onToggle: () => void;
   onUpdate: (index: number, updates: Partial<Ruleset>) => void;
 }
 
-function RulesetCard({ ruleset, index, isExpanded, hasInteracted, companies, onToggle, onUpdate }: RulesetCardProps) {
+function RulesetCard({ ruleset, index, isExpanded, hasInteracted, companies, primaryCurrency, onToggle, onUpdate }: RulesetCardProps) {
   // Refs for all number/text inputs to avoid re-renders on keystroke
   const periodicityCustomRef = useRef<HTMLInputElement>(null);
   const entitlementDayRef = useRef<HTMLInputElement>(null);
@@ -231,7 +234,7 @@ function RulesetCard({ ruleset, index, isExpanded, hasInteracted, companies, onT
               className="text-xs font-medium mb-1 block"
               style={{ color: 'var(--text-muted)' }}
             >
-              Max value per invoice
+              Max value per invoice ({primaryCurrency})
             </label>
             <input 
               ref={maxInvoiceValueRef}
@@ -291,6 +294,7 @@ function RulesetCard({ ruleset, index, isExpanded, hasInteracted, companies, onT
             </h4>
             <SalaryEditor 
               rules={ruleset.salaryRules}
+              primaryCurrency={primaryCurrency}
               onChange={rules => commitField('salaryRules', rules)}
             />
           </div>
@@ -689,10 +693,11 @@ function SortableRuleItem({
 
 interface SalaryEditorProps {
   rules: SalaryRule[];
+  primaryCurrency: Currency;
   onChange: (r: SalaryRule[]) => void;
 }
 
-function SalaryEditor({ rules, onChange }: SalaryEditorProps) {
+function SalaryEditor({ rules, primaryCurrency, onChange }: SalaryEditorProps) {
   const confirm = useConfirm();
   const onChangeRef = useRef(onChange);
   const rulesRef = useRef(rules);
@@ -748,8 +753,8 @@ function SalaryEditor({ rules, onChange }: SalaryEditorProps) {
             <tr>
               <th>Start</th>
               <th>End</th>
-              <th>Base Value</th>
-              <th>Deduction</th>
+              <th>Base Value ({primaryCurrency})</th>
+              <th>Deduction ({primaryCurrency})</th>
               <th className="w-16"></th>
             </tr>
           </thead>

@@ -50,15 +50,19 @@ export interface Ruleset {
 
 export type ThemePreference = 'light' | 'dark' | 'system';
 
+export type Currency = 'CZK' | 'EUR' | 'USD';
+
 export interface Config {
   rootPath: string;
   sofficePath?: string; // Path to LibreOffice soffice executable
   companies: CompanyDetails[];
   contacts: Contact[];
   rulesets: Ruleset[];
+  primaryCurrency: Currency; // The main currency for invoices and totals
   exchangeRates: {
     EUR: number;
     USD: number;
+    CZK: number;
   };
   theme?: ThemePreference;
   // Deprecated - migrated to CompanyDetails.bankAccount (for suppliers)
@@ -72,9 +76,11 @@ export const DEFAULT_CONFIG: Config = {
   contacts: [],
   companies: [],
   rulesets: [],
+  primaryCurrency: 'CZK',
   exchangeRates: {
     EUR: 25,
-    USD: 23
+    USD: 23,
+    CZK: 1
   },
   theme: 'system'
 };

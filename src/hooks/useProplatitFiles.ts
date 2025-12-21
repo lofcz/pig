@@ -1,24 +1,25 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { getProplatitFiles, FileEntry } from '../utils/logic';
-import { Config } from '../types';
+import { Config, Currency } from '../types';
 
 export interface ProplatitItem {
   file: FileEntry;
   value: number;
-  currency: 'CZK' | 'EUR' | 'USD';
+  currency: Currency;
   selected: boolean;
   assignedDraftId?: string;
 }
 
 interface UseProplatitFilesOptions {
   rootPath: string;
+  primaryCurrency: Currency;
   exchangeRates: Config['exchangeRates'];
 }
 
 /**
  * Hook for managing proplatit (extra) files state.
  */
-export function useProplatitFiles({ rootPath, exchangeRates }: UseProplatitFilesOptions) {
+export function useProplatitFiles({ rootPath, primaryCurrency, exchangeRates }: UseProplatitFilesOptions) {
   const [files, setFiles] = useState<ProplatitItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -28,12 +29,12 @@ export function useProplatitFiles({ rootPath, exchangeRates }: UseProplatitFiles
     setFiles(loadedFiles.map(f => ({
       file: f,
       value: 0,
-      currency: 'CZK' as const,
+      currency: primaryCurrency,
       selected: false,
       assignedDraftId: undefined
     })));
     setLoading(false);
-  }, [rootPath]);
+  }, [rootPath, primaryCurrency]);
 
   useEffect(() => {
     loadFiles();
@@ -42,7 +43,7 @@ export function useProplatitFiles({ rootPath, exchangeRates }: UseProplatitFiles
   const updateItem = useCallback((
     index: number,
     value: number,
-    currency: 'CZK' | 'EUR' | 'USD',
+    currency: Currency,
     selected: boolean
   ) => {
     setFiles(prev => prev.map((item, idx) =>
@@ -53,11 +54,14 @@ export function useProplatitFiles({ rootPath, exchangeRates }: UseProplatitFiles
   const totalValue = useMemo(() => {
     return files.filter(p => p.selected).reduce((sum, p) => {
       let val = p.value;
-      if (p.currency === 'EUR') val *= exchangeRates.EUR;
-      if (p.currency === 'USD') val *= exchangeRates.USD;
+      // Convert from item's currency to primary currency
+      if (p.currency !== primaryCurrency) {
+        // First convert to the base (using exchange rate), then account for primary currency rate
+        val = val * exchangeRates[p.currency] / exchangeRates[primaryCurrency];
+      }
       return sum + val;
     }, 0);
-  }, [files, exchangeRates]);
+  }, [files, exchangeRates, primaryCurrency]);
 
   const selectedFiles = useMemo(() => 
     files.filter(p => p.selected),

@@ -285,8 +285,8 @@ label {
   user-select: none;
 }
 
-:where(input:not([type]),
-input[type="text"],
+:where(input:not([type]):not([id^="react-select"]),
+input[type="text"]:not([id^="react-select"]),
 input[type="number"],
 input[type="email"],
 input[type="password"],
@@ -304,8 +304,8 @@ select) {
   width: 100%;
 }
 
-:where(input:not([type]),
-input[type="text"],
+:where(input:not([type]):not([id^="react-select"]),
+input[type="text"]:not([id^="react-select"]),
 input[type="number"],
 input[type="email"],
 input[type="password"],
@@ -315,8 +315,8 @@ select):hover {
   border-color: var(--text-muted);
 }
 
-:where(input:not([type]),
-input[type="text"],
+:where(input:not([type]):not([id^="react-select"]),
+input[type="text"]:not([id^="react-select"]),
 input[type="number"],
 input[type="email"],
 input[type="password"],

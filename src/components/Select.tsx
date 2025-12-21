@@ -4,6 +4,7 @@ import ReactSelect, {
   StylesConfig,
   GroupBase,
 } from 'react-select';
+import ReactCreatableSelect, { CreatableProps } from 'react-select/creatable';
 
 export interface SelectOption<T = string> {
   value: T;
@@ -15,6 +16,11 @@ type SelectSize = 'default' | 'sm';
 
 interface SelectProps<T = string, IsMulti extends boolean = false>
   extends Omit<ReactSelectProps<SelectOption<T>, IsMulti, GroupBase<SelectOption<T>>>, 'styles' | 'theme'> {
+  size?: SelectSize;
+}
+
+interface CreatableSelectProps<T = string, IsMulti extends boolean = false>
+  extends Omit<CreatableProps<SelectOption<T>, IsMulti, GroupBase<SelectOption<T>>>, 'styles' | 'theme'> {
   size?: SelectSize;
 }
 
@@ -75,6 +81,8 @@ const buildStyles = <T, IsMulti extends boolean>(
     color: 'var(--text-primary)',
     margin: 0,
     padding: 0,
+    // Remove inner input outline (control wrapper already has focus ring)
+    outline: 'none',
     // Hide blinking cursor when not searchable
     caretColor: state.selectProps.isSearchable === false ? 'transparent' : undefined,
   }),
@@ -212,6 +220,24 @@ function SelectInner<T = string, IsMulti extends boolean = false>({
 
 // Memoize the entire Select component
 export const Select = memo(SelectInner) as typeof SelectInner;
+
+function CreatableSelectInner<T = string, IsMulti extends boolean = false>({
+  size = 'default',
+  ...props
+}: CreatableSelectProps<T, IsMulti>) {
+  // Use pre-computed styles - zero computation during render
+  const styles = size === 'sm' ? STYLES_SM : STYLES_DEFAULT;
+  
+  return (
+    <ReactCreatableSelect<SelectOption<T>, IsMulti, GroupBase<SelectOption<T>>>
+      {...props}
+      styles={styles as StylesConfig<SelectOption<T>, IsMulti, GroupBase<SelectOption<T>>>}
+      menuPortalTarget={document.body}
+    />
+  );
+}
+
+export const CreatableSelect = memo(CreatableSelectInner) as typeof CreatableSelectInner;
 
 // Helper to create options from simple value arrays
 export function createOptions<T extends string>(

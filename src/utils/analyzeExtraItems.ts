@@ -7,6 +7,7 @@ import { readFile } from '@tauri-apps/plugin-fs';
 import { z } from 'zod';
 import { AIService, AIProvider, Message, ContentPart, OutputSchema } from './ai';
 import { loadAPIKeys, getProviderOrder, isProviderConfigured } from './apiKeys';
+import { Currency } from '../types';
 
 // Schema for extracted payment info
 export const PaymentInfoSchema = z.object({
@@ -33,8 +34,9 @@ const PAYMENT_INFO_OUTPUT_SCHEMA: OutputSchema = {
   required: ['paidAmount', 'paidCurrency'],
 };
 
-// System prompt for extraction
-const EXTRACTION_SYSTEM_PROMPT = `You are an invoice and receipt analyzer. Your task is to extract the total paid or billed amount from documents.
+// System prompt for extraction - now accepts primary currency as parameter
+function getExtractionSystemPrompt(primaryCurrency: Currency): string {
+  return `You are an invoice and receipt analyzer. Your task is to extract the total paid or billed amount from documents.
 
 Guidelines:
 - Look for the TOTAL amount, not individual line items
@@ -43,9 +45,10 @@ Guidelines:
 - If the currency is Czech Koruna/Crowns, use "CZK"
 - If the currency is Euro/€, use "EUR"  
 - If the currency is US Dollar/$, use "USD"
-- If the currency is unclear but the document appears to be Czech, default to "CZK"
+- If the currency is unclear, default to "${primaryCurrency}"
 - Return the amount as a number (no formatting, no currency symbols)
 - If you cannot determine the amount, return 0`;
+}
 
 export interface AnalysisResult {
   success: boolean;
@@ -103,7 +106,8 @@ function isSupportedFileType(filename: string): boolean {
 async function analyzeFile(
   filePath: string,
   fileName: string,
-  aiService: AIService
+  aiService: AIService,
+  primaryCurrency: Currency
 ): Promise<AnalysisResult> {
   try {
     if (!isSupportedFileType(fileName)) {
@@ -158,7 +162,7 @@ async function analyzeFile(
         outputSchema: PAYMENT_INFO_OUTPUT_SCHEMA,
       },
       {
-        systemPrompt: EXTRACTION_SYSTEM_PROMPT,
+        systemPrompt: getExtractionSystemPrompt(primaryCurrency),
         maxTokens: 500,
       }
     );
@@ -185,12 +189,13 @@ async function analyzeFile(
 export async function analyzeExtraItems(
   items: Array<{ filePath: string; fileName: string; index: number }>,
   options: {
+    primaryCurrency: Currency;
     concurrency?: number;
     onProgress?: (progress: AnalysisProgress) => void;
     onItemComplete?: (index: number, result: AnalysisResult) => void;
-  } = {}
+  }
 ): Promise<Map<number, AnalysisResult>> {
-  const { concurrency = 8, onProgress, onItemComplete } = options;
+  const { primaryCurrency, concurrency = 8, onProgress, onItemComplete } = options;
   const results = new Map<number, AnalysisResult>();
 
   // Load API keys and find available provider
@@ -236,7 +241,7 @@ export async function analyzeExtraItems(
           current: item.fileName,
         });
 
-        const result = await analyzeFile(item.filePath, item.fileName, aiService);
+        const result = await analyzeFile(item.filePath, item.fileName, aiService, primaryCurrency);
         results.set(item.index, result);
         onItemComplete?.(item.index, result);
 

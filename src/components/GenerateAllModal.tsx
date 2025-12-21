@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { useEventListener } from '../hooks';
 
+import { Currency } from '../types';
+
 interface GeneratedInvoice {
   id: string;
   label: string;
@@ -30,6 +32,7 @@ interface GenerateAllModalProps {
   isOpen: boolean;
   onClose: () => void;
   invoices: InvoiceToGenerate[];
+  primaryCurrency: Currency;
   onGenerateInvoice: (id: string) => Promise<string | undefined>;
   rootPath: string;
   onComplete: () => Promise<void>;
@@ -48,6 +51,7 @@ export default function GenerateAllModal({
   isOpen,
   onClose,
   invoices,
+  primaryCurrency,
   onGenerateInvoice,
   rootPath,
   onComplete
@@ -305,7 +309,7 @@ export default function GenerateAllModal({
                     <div className="generate-all-item-content">
                       <span className="generate-all-item-label">{invoice.label}</span>
                       <span className="generate-all-item-amount">
-                        {invoice.amount.toLocaleString()} Kč
+                        {invoice.amount.toLocaleString()} {primaryCurrency}
                       </span>
                     </div>
                     {isDone && (
@@ -336,7 +340,7 @@ export default function GenerateAllModal({
             <div className="generate-all-summary">
               <div className="generate-all-summary-item">
                 <span className="summary-label">Total Value</span>
-                <span className="summary-value">{totalAmount.toLocaleString()} Kč</span>
+                <span className="summary-value">{totalAmount.toLocaleString()} {primaryCurrency}</span>
               </div>
             </div>
 
@@ -354,7 +358,7 @@ export default function GenerateAllModal({
                     <FileText size={18} className="file-icon" />
                     <div className="file-info">
                       <span className="file-label">{inv.label}</span>
-                      <span className="file-amount">{inv.amount.toLocaleString()} Kč</span>
+                      <span className="file-amount">{inv.amount.toLocaleString()} {primaryCurrency}</span>
                     </div>
                     <ExternalLink size={16} className="file-external" />
                   </button>

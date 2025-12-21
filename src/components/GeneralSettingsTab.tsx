@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Config } from '../types';
+import { Config, Currency } from '../types';
 import { open } from '@tauri-apps/plugin-dialog';
 import { exists } from '@tauri-apps/plugin-fs';
 import { useTheme, Theme } from '../contexts/ThemeContext';
@@ -16,8 +16,15 @@ import {
   Palette,
   Terminal,
   Wand2,
-  Cog
+  Cog,
+  Coins
 } from 'lucide-react';
+
+const CURRENCY_OPTIONS: { value: Currency; label: string; symbol: string }[] = [
+  { value: 'CZK', label: 'Czech Koruna', symbol: 'Kč' },
+  { value: 'EUR', label: 'Euro', symbol: '€' },
+  { value: 'USD', label: 'US Dollar', symbol: '$' },
+];
 
 export interface GeneralSettingsTabRef {
   saveAPIKeys: () => Promise<void>;
@@ -88,42 +95,71 @@ export function GeneralSettingsTab({ config, onChange, apiKeysRef }: GeneralSett
           </div>
         </SettingsSection>
 
+        {/* Primary Currency Section */}
+        <SettingsSection title="Currency" icon={Coins}>
+          <div>
+            <label 
+              className="text-xs font-medium mb-1.5 block"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              Primary Currency
+            </label>
+            <div 
+              className="inline-flex gap-1 p-1 rounded-xl"
+              style={{ backgroundColor: 'var(--bg-surface)' }}
+            >
+              {CURRENCY_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => onChange({...config, primaryCurrency: option.value})}
+                  className={`
+                    flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all
+                    ${config.primaryCurrency === option.value 
+                      ? 'shadow-sm' 
+                      : 'hover:bg-black/5 dark:hover:bg-white/5'
+                    }
+                  `}
+                  style={{ 
+                    backgroundColor: config.primaryCurrency === option.value ? 'var(--accent-500)' : 'transparent',
+                    color: config.primaryCurrency === option.value ? 'white' : 'var(--text-muted)'
+                  }}
+                >
+                  <span className="font-mono">{option.symbol}</span>
+                  <span>{option.value}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs mt-2" style={{ color: 'var(--text-subtle)' }}>
+              All invoice totals and values will be displayed in this currency.
+            </p>
+          </div>
+        </SettingsSection>
+
         {/* Exchange Rates Section */}
         <SettingsSection title="Exchange Rates" icon={Percent}>
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label 
-                className="text-xs font-medium mb-1.5 block"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                EUR → CZK
-              </label>
-              <input
-                type="number"
-                value={config.exchangeRates.EUR}
-                onChange={e => onChange({
-                  ...config, 
-                  exchangeRates: {...config.exchangeRates, EUR: Number(e.target.value)}
-                })}
-              />
-            </div>
-            <div>
-              <label 
-                className="text-xs font-medium mb-1.5 block"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                USD → CZK
-              </label>
-              <input
-                type="number"
-                value={config.exchangeRates.USD}
-                onChange={e => onChange({
-                  ...config, 
-                  exchangeRates: {...config.exchangeRates, USD: Number(e.target.value)}
-                })}
-              />
-            </div>
+            {CURRENCY_OPTIONS.filter(c => c.value !== config.primaryCurrency).map(currency => (
+              <div key={currency.value}>
+                <label 
+                  className="text-xs font-medium mb-1.5 block"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  {currency.value} → {config.primaryCurrency}
+                </label>
+                <input
+                  type="number"
+                  value={config.exchangeRates[currency.value]}
+                  onChange={e => onChange({
+                    ...config, 
+                    exchangeRates: {...config.exchangeRates, [currency.value]: Number(e.target.value)}
+                  })}
+                />
+              </div>
+            ))}
           </div>
+          <p className="text-xs mt-3" style={{ color: 'var(--text-subtle)' }}>
+            Exchange rates for converting other currencies to {config.primaryCurrency}.
+          </p>
         </SettingsSection>
       </div>
 

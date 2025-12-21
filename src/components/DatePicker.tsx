@@ -6,15 +6,18 @@ import { useEventListener } from '../hooks';
 import 'react-calendar/dist/Calendar.css';
 
 type DatePickerSize = 'default' | 'sm';
+type DatePickerMode = 'month' | 'day';
 
 interface DatePickerProps {
-  /** Value in "YYYY-MM" format */
+  /** Value in "YYYY-MM" format (month mode) or "YYYY-MM-DD" format (day mode) */
   value: string;
-  /** Callback with "YYYY-MM" format */
+  /** Callback with "YYYY-MM" format (month mode) or "YYYY-MM-DD" format (day mode) */
   onChange: (value: string) => void;
   placeholder?: string;
   size?: DatePickerSize;
   disabled?: boolean;
+  /** Selection mode: 'month' for month picker, 'day' for full date picker */
+  mode?: DatePickerMode;
 }
 
 // Unified sizing to match input styles from App.css
@@ -35,31 +38,43 @@ const SIZE_CONFIG = {
   },
 } as const;
 
-function DatePickerInner({ value, onChange, placeholder, size = 'default', disabled = false }: DatePickerProps) {
+function DatePickerInner({ value, onChange, placeholder, size = 'default', disabled = false, mode = 'month' }: DatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
 
   const config = SIZE_CONFIG[size];
+  const isDayMode = mode === 'day';
 
-  // Parse "YYYY-MM" to Date
+  // Parse value to Date based on mode
   const dateValue = value ? (() => {
-    const [year, month] = value.split('-').map(Number);
-    return new Date(year, month - 1, 1);
+    const parts = value.split('-').map(Number);
+    if (isDayMode && parts.length === 3) {
+      return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+    return new Date(parts[0], parts[1] - 1, 1);
   })() : new Date();
 
-  // Format Date to "YYYY-MM"
-  const formatToYearMonth = (date: Date): string => {
+  // Format Date based on mode
+  const formatDate = (date: Date): string => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
+    if (isDayMode) {
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
     return `${year}-${month}`;
   };
 
-  // Format for display
+  // Format for display based on mode
   const displayValue = value ? (() => {
-    const [year, month] = value.split('-').map(Number);
-    const date = new Date(year, month - 1, 1);
+    const parts = value.split('-').map(Number);
+    if (isDayMode && parts.length === 3) {
+      const date = new Date(parts[0], parts[1] - 1, parts[2]);
+      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+    const date = new Date(parts[0], parts[1] - 1, 1);
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
   })() : '';
 
@@ -137,7 +152,7 @@ function DatePickerInner({ value, onChange, placeholder, size = 'default', disab
 
   const handleChange = (date: unknown) => {
     if (date instanceof Date) {
-      onChange(formatToYearMonth(date));
+      onChange(formatDate(date));
       setIsOpen(false);
     }
   };
@@ -170,7 +185,7 @@ function DatePickerInner({ value, onChange, placeholder, size = 'default', disab
         }}
       >
         <Calendar size={config.iconSize} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-        <span style={{ flex: 1, textAlign: 'left' }}>{displayValue || placeholder || 'Select month'}</span>
+        <span style={{ flex: 1, textAlign: 'left' }}>{displayValue || placeholder || (isDayMode ? 'Select date' : 'Select month')}</span>
         <ChevronDown 
           size={config.iconSize} 
           style={{ 
@@ -201,8 +216,8 @@ function DatePickerInner({ value, onChange, placeholder, size = 'default', disab
           <ReactCalendar
             onChange={handleChange}
             value={dateValue}
-            defaultView="year"
-            maxDetail="year"
+            defaultView={isDayMode ? "month" : "year"}
+            maxDetail={isDayMode ? "month" : "year"}
             minDetail="decade"
           />
         </div>,
@@ -319,6 +334,59 @@ function DatePickerInner({ value, onChange, placeholder, size = 'default', disab
         .date-picker-dropdown .react-calendar__tile--active:hover,
         .date-picker-dropdown .react-calendar__tile--hasActive:hover {
           background: var(--accent-600) !important;
+        }
+
+        /* Day view (month view with days) styles */
+        .date-picker-dropdown .react-calendar__month-view__weekdays {
+          text-align: center;
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: var(--text-muted);
+          padding: 0.25rem 0;
+        }
+
+        .date-picker-dropdown .react-calendar__month-view__weekdays__weekday {
+          padding: 0.5rem;
+        }
+
+        .date-picker-dropdown .react-calendar__month-view__weekdays__weekday abbr {
+          text-decoration: none;
+        }
+
+        .date-picker-dropdown .react-calendar__month-view__days {
+          display: grid !important;
+          grid-template-columns: repeat(7, 1fr);
+          gap: 0.125rem;
+          padding: 0.25rem;
+        }
+
+        .date-picker-dropdown .react-calendar__month-view__days__day {
+          padding: 0.5rem;
+          font-size: 0.8125rem;
+          font-weight: 500;
+          color: var(--text-secondary);
+          background: transparent;
+          border: none;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: all 0.15s ease;
+          aspect-ratio: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .date-picker-dropdown .react-calendar__month-view__days__day:hover {
+          background: var(--bg-subtle);
+          color: var(--text-primary);
+        }
+
+        .date-picker-dropdown .react-calendar__month-view__days__day--neighboringMonth {
+          color: var(--text-subtle);
+        }
+
+        .date-picker-dropdown .react-calendar__month-view__days__day--weekend {
+          color: var(--text-muted);
         }
       `}</style>
     </>
