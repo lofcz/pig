@@ -21,6 +21,7 @@ import {
   Loader2,
   Package
 } from 'lucide-react';
+import { Select, findOption } from './Select';
 
 interface GeneratorProps {
   config: Config;
@@ -293,10 +294,12 @@ export default function Generator({ config }: GeneratorProps) {
     }
 
     const issueDate = new Date(draft.year, draft.month - 1, parseInt(day));
-    const dueDate = new Date(issueDate);
-    dueDate.setDate(issueDate.getDate() + 14);
-
     const issueDateStr = `${issueDate.getDate()}. ${issueDate.getMonth() + 1}. ${issueDate.getFullYear()}`;
+    
+    // Due date is calculated from current date + configurable offset (default 14 days)
+    const dueDateOffsetDays = ruleset.dueDateOffsetDays ?? 14;
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + dueDateOffsetDays);
     const dueDateStr = `${dueDate.getDate()}. ${dueDate.getMonth() + 1}. ${dueDate.getFullYear()}`;
 
     let customer: CompanyDetails | undefined;
@@ -622,26 +625,12 @@ export default function Generator({ config }: GeneratorProps) {
         {drafts.map((draft, i) => (
           <div 
             key={draft.id} 
-            className="card overflow-hidden card-hover relative"
-            style={{ 
-              borderLeft: draft.status === 'done' 
-                ? '4px solid var(--success-500)' 
-                : '4px solid var(--accent-500)'
-            }}
+            className={`card overflow-hidden card-hover relative ${draft.status === 'done' ? 'draft-done' : 'draft-pending'}`}
           >
             {/* Generated Overlay */}
             {draft.status === 'done' && (
-              <div 
-                className="absolute inset-0 flex items-center justify-center z-10"
-                style={{ backgroundColor: 'rgba(var(--success-500), 0.1)' }}
-              >
-                <div 
-                  className="flex items-center gap-2 px-6 py-3 rounded-full"
-                  style={{ 
-                    backgroundColor: 'var(--success-100)',
-                    color: 'var(--success-700)'
-                  }}
-                >
+              <div className="absolute inset-0 flex items-center justify-center z-10 draft-done-overlay">
+                <div className="flex items-center gap-2 px-6 py-3 rounded-full draft-done-badge">
                   <CheckCircle2 size={20} />
                   <span className="font-bold">Generated</span>
                 </div>
@@ -739,21 +728,21 @@ export default function Generator({ config }: GeneratorProps) {
                     <FileText size={14} />
                     Description
                   </label>
-                  <div className="relative">
-                    <select
-                      value={draft.description}
-                      onChange={e => {
+                  <Select
+                    value={findOption(
+                      (config.rulesets.find(r => r.id === draft.rulesetId)?.descriptions || []).map(d => ({ value: d, label: d })),
+                      draft.description
+                    )}
+                    onChange={(opt) => {
+                      if (opt) {
                         const newD = [...drafts];
-                        newD[i].description = e.target.value;
+                        newD[i].description = opt.value;
                         setDrafts(newD);
-                      }}
-                      className="w-full"
-                    >
-                      {(config.rulesets.find(r => r.id === draft.rulesetId)?.descriptions || []).map(d => (
-                        <option key={d} value={d}>{d}</option>
-                      ))}
-                    </select>
-                  </div>
+                      }
+                    }}
+                    options={(config.rulesets.find(r => r.id === draft.rulesetId)?.descriptions || []).map(d => ({ value: d, label: d }))}
+                    isSearchable={false}
+                  />
                 </div>
               </div>
             </div>

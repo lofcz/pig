@@ -1,9 +1,16 @@
-import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { useState, useEffect, forwardRef, useImperativeHandle, useMemo, useCallback, useRef } from 'react';
 import { Config, CompanyDetails, SalaryRule, CustomerRule, Ruleset } from '../types';
+import { DragDropProvider, DragOverlay } from '@dnd-kit/react';
+import { useSortable } from '@dnd-kit/react/sortable';
+import { move } from '@dnd-kit/helpers';
 import { saveConfig } from '../utils/config';
 import { open } from '@tauri-apps/plugin-dialog';
 import { exists } from '@tauri-apps/plugin-fs';
 import { useTheme, Theme } from '../contexts/ThemeContext';
+import { useConfirm } from '../contexts/ConfirmModalContext';
+import { usePrompt } from '../contexts/PromptModalContext';
+import { useEventListener } from '../hooks';
+import { DatePicker } from './DatePicker';
 import { toast } from 'sonner';
 import {
   FolderOpen,
@@ -15,7 +22,6 @@ import {
   Percent,
   Plus,
   Trash2,
-  ChevronUp,
   ChevronDown,
   Check,
   AlertTriangle,
@@ -27,8 +33,25 @@ import {
   Sun,
   Moon,
   Monitor,
-  Palette
+  Palette,
+  GripVertical
 } from 'lucide-react';
+import { Select, SelectOption, findOption } from './Select';
+
+// Select options constants
+const PERIODICITY_OPTIONS: SelectOption[] = [
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'quarterly', label: 'Quarterly' },
+  { value: 'yearly', label: 'Yearly' },
+  { value: 'custom_months', label: 'Custom (Months)' },
+  { value: 'custom_days', label: 'Custom (Days)' },
+];
+
+const CONDITION_OPTIONS: SelectOption[] = [
+  { value: 'odd', label: 'Odd Month' },
+  { value: 'even', label: 'Even Month' },
+  { value: 'default', label: 'Default (Always)' },
+];
 
 interface ConfigEditorProps {
   config: Config;
@@ -45,6 +68,8 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
   const [localConfig, setLocalConfig] = useState<Config>(JSON.parse(JSON.stringify(config)));
   const [activeTab, setActiveTab] = useState<'general' | 'supplier' | 'customers' | 'rulesets'>('general');
   const { theme, setTheme } = useTheme();
+  const confirm = useConfirm();
+  const prompt = usePrompt();
 
   // Reset local config when becoming visible (discard any uncommitted changes)
   useEffect(() => {
@@ -68,10 +93,22 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
     save: handleSave
   }));
 
-  const addCompany = (isSupplier: boolean) => {
-    const id = prompt(`Enter unique ID for ${isSupplier ? 'Supplier' : 'Customer'} (e.g. 'scio_zizkov'):`);
+  const addCompany = async (isSupplier: boolean) => {
+    const type = isSupplier ? 'Supplier' : 'Customer';
+    const id = await prompt({
+      title: `Add ${type}`,
+      message: `Enter a unique ID for the new ${type.toLowerCase()}.`,
+      placeholder: 'e.g. scio_zizkov',
+      confirmText: 'Create',
+      cancelText: 'Cancel'
+    });
+    
     if (!id) return;
-    if (localConfig.companies.find(c => c.id === id)) { alert("ID exists"); return; }
+    
+    if (localConfig.companies.find(c => c.id === id)) {
+      toast.error('A company with this ID already exists');
+      return;
+    }
     
     const newC: CompanyDetails = { 
       id, 
@@ -93,8 +130,17 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
     }));
   };
 
-  const removeCompany = (id: string) => {
-    if (confirm("Delete company?")) {
+  const removeCompany = async (id: string) => {
+    const company = localConfig.companies.find(c => c.id === id);
+    const confirmed = await confirm({
+      title: 'Delete Company',
+      message: `Are you sure you want to delete "${company?.name || id}"? This action cannot be undone.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'danger'
+    });
+    
+    if (confirmed) {
       setLocalConfig(prev => ({
         ...prev,
         companies: prev.companies.filter(c => c.id !== id)
@@ -357,15 +403,11 @@ function PathInput({ value, onChange, isDirectory = false, label, icon: Icon }: 
             type="text"
             value={value}
             onChange={e => onChange(e.target.value)}
-            className="pr-10"
-            style={{
-              borderColor: isValid === false ? 'var(--error-500)' : isValid === true ? 'var(--success-500)' : undefined,
-              backgroundColor: isValid === false ? 'var(--error-50)' : isValid === true ? 'var(--success-50)' : undefined,
-            }}
+            className={`pr-10 ${isValid === true ? 'validation-valid' : isValid === false ? 'validation-invalid' : ''}`}
           />
           <div className="absolute right-3 top-1/2 -translate-y-1/2">
-            {isValid === true && <Check size={18} style={{ color: 'var(--success-500)' }} />}
-            {isValid === false && <AlertTriangle size={18} style={{ color: 'var(--error-500)' }} />}
+            {isValid === true && <Check size={18} className="validation-valid-icon" />}
+            {isValid === false && <AlertTriangle size={18} className="validation-invalid-icon" />}
           </div>
         </div>
         <button onClick={handleBrowse} className="btn btn-secondary btn-icon">
@@ -571,6 +613,20 @@ interface RulesetsEditorProps {
 }
 
 function RulesetsEditor({ rulesets, companies, onChange }: RulesetsEditorProps) {
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set(rulesets.map(r => r.id)));
+  
+  const toggleExpanded = (id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
   const updateRuleset = (index: number, field: keyof Ruleset, value: any) => {
     const newR = [...rulesets];
     newR[index] = { ...newR[index], [field]: value };
@@ -578,29 +634,35 @@ function RulesetsEditor({ rulesets, companies, onChange }: RulesetsEditorProps) 
   };
 
   return (
-    <div className="space-y-6">
-      {rulesets.map((rs, i) => (
+    <div className="space-y-4">
+      {rulesets.map((rs, i) => {
+        const isExpanded = expandedIds.has(rs.id);
+        return (
         <div 
           key={rs.id} 
-          className="card overflow-hidden"
+          className="card ruleset-accordion"
         >
-          {/* Ruleset Header */}
-          <div 
-            className="px-6 py-4 flex items-center justify-between"
-            style={{ 
-              background: 'linear-gradient(135deg, var(--accent-500), var(--accent-600))',
-            }}
+          {/* Ruleset Header - Clickable */}
+          <button 
+            type="button"
+            onClick={() => toggleExpanded(rs.id)}
+            className={`w-full px-6 py-4 flex items-center justify-between cursor-pointer ruleset-header ${isExpanded ? 'expanded' : ''}`}
           >
             <div className="flex items-center gap-3">
-              <Layers size={24} className="text-white" />
-              <div>
-                <h3 className="text-lg font-bold text-white">{rs.name}</h3>
-                <p className="text-sm text-white/70">ID: {rs.id}</p>
+              <Layers size={24} className="ruleset-icon" />
+              <div className="text-left">
+                <h3 className="text-lg font-bold ruleset-title">{rs.name}</h3>
+                <p className="text-sm ruleset-subtitle">ID: {rs.id}</p>
               </div>
             </div>
-          </div>
+            <div className={`ruleset-chevron ${isExpanded ? 'expanded' : ''}`}>
+              <ChevronDown size={24} />
+            </div>
+          </button>
 
-          <div className="p-6 space-y-6">
+          {/* Collapsible Content */}
+          {isExpanded && (
+            <div className="ruleset-content-inner p-6 space-y-6">
             {/* Basic Settings */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -612,17 +674,14 @@ function RulesetsEditor({ rulesets, companies, onChange }: RulesetsEditorProps) 
                   Periodicity
                 </label>
                 <div className="flex gap-2">
-                  <select 
-                    value={rs.periodicity}
-                    onChange={e => updateRuleset(i, 'periodicity', e.target.value)}
-                    className="flex-1"
-                  >
-                    <option value="monthly">Monthly</option>
-                    <option value="quarterly">Quarterly</option>
-                    <option value="yearly">Yearly</option>
-                    <option value="custom_months">Custom (Months)</option>
-                    <option value="custom_days">Custom (Days)</option>
-                  </select>
+                  <div className="flex-1">
+                    <Select
+                      value={findOption(PERIODICITY_OPTIONS, rs.periodicity)}
+                      onChange={(opt) => opt && updateRuleset(i, 'periodicity', opt.value)}
+                      options={PERIODICITY_OPTIONS}
+                      isSearchable={false}
+                    />
+                  </div>
                   {(rs.periodicity === 'custom_months' || rs.periodicity === 'custom_days') && (
                     <input 
                       type="number"
@@ -654,6 +713,27 @@ function RulesetsEditor({ rulesets, companies, onChange }: RulesetsEditorProps) 
               </div>
             </div>
 
+            {/* Due Date Offset */}
+            <div className="max-w-xs">
+              <label 
+                className="flex items-center gap-2 text-sm font-semibold mb-2"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                <Clock size={16} />
+                Due Date Offset (Days)
+              </label>
+              <input 
+                type="number"
+                value={rs.dueDateOffsetDays ?? 14}
+                onChange={e => updateRuleset(i, 'dueDateOffsetDays', Number(e.target.value))}
+                placeholder="14"
+                min={0}
+              />
+              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                Days from current date for payment due date (default: 14)
+              </p>
+            </div>
+
             {/* Template Path */}
             <PathInput 
               label="ODT Template Path"
@@ -683,7 +763,7 @@ function RulesetsEditor({ rulesets, companies, onChange }: RulesetsEditorProps) 
               </div>
             </label>
 
-            {/* Customer Rules */}
+            {/* Invoicing Rules */}
             <div 
               className="p-4 rounded-lg"
               style={{ backgroundColor: 'var(--bg-muted)' }}
@@ -693,12 +773,12 @@ function RulesetsEditor({ rulesets, companies, onChange }: RulesetsEditorProps) 
                 style={{ color: 'var(--text-primary)' }}
               >
                 <Users size={18} />
-                Customer Rules
+                Invoicing Rules
                 <span 
                   className="text-xs font-normal"
                   style={{ color: 'var(--text-muted)' }}
                 >
-                  (Top → Bottom Priority)
+                  (Top → Bottom Priority · Drag to reorder)
                 </span>
               </h4>
               <CustomerRulesEditor 
@@ -743,9 +823,11 @@ function RulesetsEditor({ rulesets, companies, onChange }: RulesetsEditorProps) 
                 onChange={descs => updateRuleset(i, 'descriptions', descs)}
               />
             </div>
-          </div>
+            </div>
+          )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -756,88 +838,145 @@ interface CustomerRulesEditorProps {
   onChange: (r: CustomerRule[]) => void;
 }
 
-function CustomerRulesEditor({ rules, companies, onChange }: CustomerRulesEditorProps) {
-  const targets = companies.filter(c => !c.isSupplier);
+// Create stable IDs for rules (using index-based for simplicity since rules don't have unique IDs)
+interface RuleWithId extends CustomerRule {
+  id: string;  // Required by @dnd-kit/helpers move()
+}
 
-  const addRule = () => onChange([...rules, { condition: 'default', companyId: targets[0]?.id || '' }]);
+function CustomerRulesEditor({ rules, companies, onChange }: CustomerRulesEditorProps) {
+  // Memoize targets to prevent recreating on every render
+  const targets = useMemo(() => companies.filter(c => !c.isSupplier), [companies]);
   
-  const removeRule = (idx: number) => {
-    const newR = [...rules];
-    newR.splice(idx, 1);
-    onChange(newR);
-  };
+  // Memoize target options for Select components
+  const targetOptions = useMemo(
+    () => targets.map(c => ({ value: c.id, label: c.name })),
+    [targets]
+  );
   
-  const updateRule = (idx: number, field: keyof CustomerRule, val: any) => {
-    const newR = [...rules];
+  const confirm = useConfirm();
+  
+  // Use refs to keep callbacks stable while still accessing latest values
+  const rulesRef = useRef(rules);
+  const targetsRef = useRef(targets);
+  const onChangeRef = useRef(onChange);
+  
+  // Keep refs up to date
+  rulesRef.current = rules;
+  targetsRef.current = targets;
+  onChangeRef.current = onChange;
+  
+  // Flag to skip sync when we made the change ourselves
+  const skipNextSync = useRef(false);
+  
+  // Create stable IDs for sorting
+  const [rulesWithIds, setRulesWithIds] = useState<RuleWithId[]>(() => 
+    rules.map((rule, i) => ({ ...rule, id: `rule-${i}-${Date.now()}` }))
+  );
+  
+  // Sync rulesWithIds when external rules change (not from our own drag)
+  useEffect(() => {
+    if (skipNextSync.current) {
+      skipNextSync.current = false;
+      return;
+    }
+    
+    // Only regenerate if length changed (add/remove) or content changed
+    setRulesWithIds(prev => {
+      if (prev.length !== rules.length) {
+        return rules.map((rule, i) => ({ ...rule, id: `rule-${i}-${Date.now()}` }));
+      }
+      // Update rule data while keeping stable IDs
+      return prev.map((prevRule, i) => ({
+        ...rules[i],
+        id: prevRule.id
+      }));
+    });
+  }, [rules]);
+
+  // Stable callbacks that use refs
+  const addRule = useCallback(() => {
+    const currentRules = rulesRef.current;
+    const currentTargets = targetsRef.current;
+    onChangeRef.current([...currentRules, { condition: 'default', companyId: currentTargets[0]?.id || '' }]);
+  }, []);
+  
+  const removeRule = useCallback(async (idx: number) => {
+    const currentRules = rulesRef.current;
+    const currentTargets = targetsRef.current;
+    const rule = currentRules[idx];
+    const targetCompany = currentTargets.find(t => t.id === rule.companyId);
+    const confirmed = await confirm({
+      title: 'Delete Invoicing Rule',
+      message: `Are you sure you want to delete this rule? (${rule.condition} → ${targetCompany?.name || rule.companyId})`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'danger'
+    });
+    
+    if (confirmed) {
+      const newR = [...currentRules];
+      newR.splice(idx, 1);
+      onChangeRef.current(newR);
+    }
+  }, [confirm]);
+  
+  const updateRule = useCallback((idx: number, field: keyof CustomerRule, val: any) => {
+    const currentRules = rulesRef.current;
+    const newR = [...currentRules];
     newR[idx] = { ...newR[idx], [field]: val };
-    onChange(newR);
-  };
-  
-  const moveRule = (idx: number, dir: -1 | 1) => {
-    if (idx + dir < 0 || idx + dir >= rules.length) return;
-    const newR = [...rules];
-    const temp = newR[idx];
-    newR[idx] = newR[idx + dir];
-    newR[idx + dir] = temp;
-    onChange(newR);
-  };
+    onChangeRef.current(newR);
+  }, []);
+
+  // Handle drag end with the new dnd-kit API
+  const handleDragEnd = useCallback((event: any) => {
+    if (event.canceled) return;
+    
+    setRulesWithIds(prev => {
+      const newRulesWithIds = move(prev, event);
+      if (newRulesWithIds !== prev) {
+        // Set flag to skip the sync effect when parent updates
+        skipNextSync.current = true;
+        // Strip the id before calling onChange (keeping original CustomerRule shape)
+        const newRules = (newRulesWithIds as RuleWithId[]).map(({ id, ...rule }) => rule as CustomerRule);
+        onChangeRef.current(newRules);
+        return newRulesWithIds as RuleWithId[];
+      }
+      return prev;
+    });
+  }, []);
+
+  // Find the rule data for the ghost overlay
+  const getRuleById = useCallback((id: string) => {
+    return rulesWithIds.find(r => r.id === id);
+  }, [rulesWithIds]);
 
   return (
     <div className="space-y-2">
-      {rules.map((rule, i) => (
-        <div 
-          key={i} 
-          className="flex gap-2 items-center p-3 rounded-lg"
-          style={{ backgroundColor: 'var(--bg-surface)' }}
-        >
-          <div className="flex flex-col gap-0.5">
-            <button 
-              onClick={() => moveRule(i, -1)} 
-              disabled={i === 0} 
-              className="btn btn-ghost btn-icon p-0.5"
-              style={{ opacity: i === 0 ? 0.3 : 1 }}
-            >
-              <ChevronUp size={16} />
-            </button>
-            <button 
-              onClick={() => moveRule(i, 1)} 
-              disabled={i === rules.length - 1}
-              className="btn btn-ghost btn-icon p-0.5"
-              style={{ opacity: i === rules.length - 1 ? 0.3 : 1 }}
-            >
-              <ChevronDown size={16} />
-            </button>
-          </div>
-          
-          <select 
-            className="w-36"
-            value={rule.condition}
-            onChange={e => updateRule(i, 'condition', e.target.value)}
-          >
-            <option value="odd">Odd Month</option>
-            <option value="even">Even Month</option>
-            <option value="default">Default (Always)</option>
-          </select>
-          
-          <ArrowRight size={18} style={{ color: 'var(--text-muted)' }} />
-          
-          <select 
-            className="flex-1"
-            value={rule.companyId}
-            onChange={e => updateRule(i, 'companyId', e.target.value)}
-          >
-            {targets.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          
-          <button 
-            onClick={() => removeRule(i)} 
-            className="btn btn-ghost btn-icon"
-            style={{ color: 'var(--error-500)' }}
-          >
-            <Trash2 size={16} />
-          </button>
-        </div>
-      ))}
+      <DragDropProvider onDragEnd={handleDragEnd}>
+        {rulesWithIds.map((rule, i) => (
+          <SortableRuleItem
+            key={rule.id}
+            id={rule.id}
+            rule={rule}
+            index={i}
+            targetOptions={targetOptions}
+            onUpdate={updateRule}
+            onRemove={removeRule}
+          />
+        ))}
+        <DragOverlay>
+          {(source) => {
+            const rule = getRuleById(source.id as string);
+            if (!rule) return null;
+            return (
+              <RuleItemGhost 
+                rule={rule} 
+                targetOptions={targetOptions} 
+              />
+            );
+          }}
+        </DragOverlay>
+      </DragDropProvider>
       <button 
         onClick={addRule} 
         className="btn btn-ghost w-full justify-center"
@@ -850,23 +989,167 @@ function CustomerRulesEditor({ rules, companies, onChange }: CustomerRulesEditor
   );
 }
 
+interface RuleItemGhostProps {
+  rule: CustomerRule;
+  targetOptions: SelectOption[];
+}
+
+// Ghost element that follows the cursor during drag
+function RuleItemGhost({ rule, targetOptions }: RuleItemGhostProps) {
+  return (
+    <div className="invoicing-rule-item invoicing-rule-ghost">
+      <div className="drag-handle">
+        <GripVertical size={18} />
+      </div>
+      
+      <div className="rule-condition-select">
+        <Select
+          value={findOption(CONDITION_OPTIONS, rule.condition)}
+          onChange={() => {}}
+          options={CONDITION_OPTIONS}
+          isSearchable={false}
+          size="sm"
+          isDisabled
+        />
+      </div>
+      
+      <ArrowRight size={18} className="rule-arrow" />
+      
+      <div className="rule-company-select">
+        <Select
+          value={findOption(targetOptions, rule.companyId)}
+          onChange={() => {}}
+          options={targetOptions}
+          isSearchable={false}
+          size="sm"
+          isDisabled
+        />
+      </div>
+      
+      <button 
+        className="btn btn-ghost btn-icon rule-delete-btn"
+        disabled
+      >
+        <Trash2 size={16} />
+      </button>
+    </div>
+  );
+}
+
+interface SortableRuleItemProps {
+  id: string;
+  rule: CustomerRule;
+  index: number;
+  targetOptions: SelectOption[];
+  onUpdate: (idx: number, field: keyof CustomerRule, val: any) => void;
+  onRemove: (idx: number) => void;
+}
+
+// New dnd-kit/react API - transforms are handled automatically, no re-renders during drag!
+function SortableRuleItem({ 
+  id, rule, index, targetOptions, onUpdate, onRemove 
+}: SortableRuleItemProps) {
+  const { ref, handleRef, isDragging } = useSortable({ id, index });
+  
+  const handleConditionChange = useCallback(
+    (opt: SelectOption | null) => opt && onUpdate(index, 'condition', opt.value),
+    [index, onUpdate]
+  );
+  
+  const handleCompanyChange = useCallback(
+    (opt: SelectOption | null) => opt && onUpdate(index, 'companyId', opt.value),
+    [index, onUpdate]
+  );
+  
+  const handleRemove = useCallback(() => onRemove(index), [index, onRemove]);
+
+  return (
+    <div
+      ref={ref}
+      className={`invoicing-rule-item ${isDragging ? 'dragging' : ''}`}
+      style={{ opacity: isDragging ? 0.5 : 1 }}
+    >
+      <div className="drag-handle" ref={handleRef}>
+        <GripVertical size={18} />
+      </div>
+      
+      <div className="rule-condition-select">
+        <Select
+          value={findOption(CONDITION_OPTIONS, rule.condition)}
+          onChange={handleConditionChange}
+          options={CONDITION_OPTIONS}
+          isSearchable={false}
+          size="sm"
+        />
+      </div>
+      
+      <ArrowRight size={18} className="rule-arrow" />
+      
+      <div className="rule-company-select">
+        <Select
+          value={findOption(targetOptions, rule.companyId)}
+          onChange={handleCompanyChange}
+          options={targetOptions}
+          isSearchable={false}
+          size="sm"
+        />
+      </div>
+      
+      <button 
+        onClick={handleRemove} 
+        className="btn btn-ghost btn-icon rule-delete-btn"
+      >
+        <Trash2 size={16} />
+      </button>
+    </div>
+  );
+}
+
 interface SalaryEditorProps {
   rules: SalaryRule[];
   onChange: (r: SalaryRule[]) => void;
 }
 
 function SalaryEditor({ rules, onChange }: SalaryEditorProps) {
-  const addRule = () => onChange([...rules, { startDate: "2025-01", endDate: "2025-12", value: 0, deduction: 0 }]);
+  const confirm = useConfirm();
   
-  const removeRule = (i: number) => {
-    const newR = [...rules];
-    newR.splice(i, 1);
-    onChange(newR);
+  // Sort rules by start date (newest to oldest)
+  const sortedRules = useMemo(() => {
+    return [...rules].sort((a, b) => b.startDate.localeCompare(a.startDate));
+  }, [rules]);
+  
+  // Find original index for operations
+  const getOriginalIndex = (sortedIndex: number): number => {
+    const sortedRule = sortedRules[sortedIndex];
+    return rules.findIndex(r => r === sortedRule || 
+      (r.startDate === sortedRule.startDate && r.endDate === sortedRule.endDate && 
+       r.value === sortedRule.value && r.deduction === sortedRule.deduction));
   };
   
-  const updateRule = (i: number, field: keyof SalaryRule, val: any) => {
+  const addRule = () => onChange([...rules, { startDate: "2025-01", endDate: "2025-12", value: 0, deduction: 0 }]);
+  
+  const removeRule = async (sortedIndex: number) => {
+    const rule = sortedRules[sortedIndex];
+    const originalIndex = getOriginalIndex(sortedIndex);
+    const confirmed = await confirm({
+      title: 'Delete Salary Period',
+      message: `Are you sure you want to delete the salary period ${rule.startDate} → ${rule.endDate}? This action cannot be undone.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'danger'
+    });
+    
+    if (confirmed) {
+      const newR = [...rules];
+      newR.splice(originalIndex, 1);
+      onChange(newR);
+    }
+  };
+  
+  const updateRule = (sortedIndex: number, field: keyof SalaryRule, val: any) => {
+    const originalIndex = getOriginalIndex(sortedIndex);
     const newR = [...rules];
-    newR[i] = { ...newR[i], [field]: val };
+    newR[originalIndex] = { ...newR[originalIndex], [field]: val };
     onChange(newR);
   };
 
@@ -876,36 +1159,33 @@ function SalaryEditor({ rules, onChange }: SalaryEditorProps) {
         <table>
           <thead>
             <tr>
-              <th>Start (YYYY-MM)</th>
-              <th>End (YYYY-MM)</th>
+              <th>Start</th>
+              <th>End</th>
               <th>Base Value</th>
               <th>Deduction</th>
               <th className="w-16"></th>
             </tr>
           </thead>
           <tbody>
-            {rules.map((r, i) => (
-              <tr key={i}>
+            {sortedRules.map((r, i) => (
+              <tr key={`${r.startDate}-${r.endDate}-${i}`}>
                 <td>
-                  <input 
-                    className="w-28" 
-                    value={r.startDate} 
-                    onChange={e => updateRule(i, 'startDate', e.target.value)}
-                    placeholder="2025-01"
+                  <DatePicker
+                    value={r.startDate}
+                    onChange={(val) => updateRule(i, 'startDate', val)}
+                    placeholder="Start"
                   />
                 </td>
                 <td>
-                  <input 
-                    className="w-28" 
-                    value={r.endDate} 
-                    onChange={e => updateRule(i, 'endDate', e.target.value)}
-                    placeholder="2025-12"
+                  <DatePicker
+                    value={r.endDate}
+                    onChange={(val) => updateRule(i, 'endDate', val)}
+                    placeholder="End"
                   />
                 </td>
                 <td>
                   <input 
                     type="number" 
-                    className="w-28" 
                     value={r.value} 
                     onChange={e => updateRule(i, 'value', Number(e.target.value))}
                     placeholder="0"
@@ -914,7 +1194,6 @@ function SalaryEditor({ rules, onChange }: SalaryEditorProps) {
                 <td>
                   <input 
                     type="number" 
-                    className="w-28" 
                     value={r.deduction} 
                     onChange={e => updateRule(i, 'deduction', Number(e.target.value))}
                     placeholder="0"
@@ -952,12 +1231,54 @@ interface DescriptionsEditorProps {
 }
 
 function DescriptionsEditor({ descriptions, onChange }: DescriptionsEditorProps) {
-  const addDesc = () => onChange([...descriptions, "New service description"]);
+  const confirm = useConfirm();
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  const newInputRef = useRef<HTMLInputElement>(null);
+  const [focusNew, setFocusNew] = useState(false);
   
-  const removeDesc = (i: number) => {
-    const newD = [...descriptions];
-    newD.splice(i, 1);
-    onChange(newD);
+  const addDesc = useCallback(() => {
+    onChange([...descriptions, "New service description"]);
+    setFocusNew(true);
+  }, [descriptions, onChange]);
+  
+  // Focus and select the newly added input
+  useEffect(() => {
+    if (focusNew && newInputRef.current) {
+      newInputRef.current.focus();
+      newInputRef.current.select();
+      setFocusNew(false);
+    }
+  }, [focusNew, descriptions]);
+  
+  // Handle Enter key to add new description
+  useEventListener({
+    type: 'keydown',
+    target: container,
+    handler: (e) => {
+      if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
+        e.preventDefault();
+        addDesc();
+      }
+    },
+    enabled: !!container
+  });
+  
+  const removeDesc = async (i: number) => {
+    const desc = descriptions[i];
+    const truncatedDesc = desc.length > 50 ? desc.substring(0, 50) + '...' : desc;
+    const confirmed = await confirm({
+      title: 'Delete Service Description',
+      message: `Are you sure you want to delete "${truncatedDesc}"? This action cannot be undone.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'danger'
+    });
+    
+    if (confirmed) {
+      const newD = [...descriptions];
+      newD.splice(i, 1);
+      onChange(newD);
+    }
   };
   
   const updateDesc = (i: number, val: string) => {
@@ -967,10 +1288,11 @@ function DescriptionsEditor({ descriptions, onChange }: DescriptionsEditorProps)
   };
 
   return (
-    <div className="space-y-2">
+    <div ref={setContainer} className="space-y-2">
       {descriptions.map((d, i) => (
         <div key={i} className="flex gap-2">
           <input 
+            ref={i === descriptions.length - 1 ? newInputRef : undefined}
             className="flex-1" 
             value={d} 
             onChange={e => updateDesc(i, e.target.value)}

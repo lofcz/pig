@@ -82,6 +82,7 @@
   /* Error - Rose */
   --error-50: #fff1f2;
   --error-100: #ffe4e6;
+  --error-300: #fda4af;
   --error-500: #f43f5e;
   --error-600: #e11d48;
   --error-700: #be123c;
@@ -158,6 +159,7 @@
   /* Error */
   --error-50: #4c0519;
   --error-100: #881337;
+  --error-300: #e11d48;
   --error-500: #fb7185;
   --error-600: #fda4af;
   --error-700: #fecdd3;
@@ -168,8 +170,8 @@
   --border-accent: var(--accent-300);
   
   /* Input specific */
-  --input-bg: #1a2035;
-  --input-border: #2a3349;
+  --input-bg: #1e2538;
+  --input-border: #3d4a66;
   --input-border-focus: var(--accent-400);
   --input-ring: rgba(99, 102, 241, 0.3);
   
@@ -274,7 +276,8 @@ h1, h2, h3, h4, h5, h6 {
 /* ============================================
    Form Elements (using :where for low specificity)
    ============================================ */
-:where(input[type="text"],
+:where(input:not([type]),
+input[type="text"],
 input[type="number"],
 input[type="email"],
 input[type="password"],
@@ -291,14 +294,16 @@ select) {
   width: 100%;
 }
 
-:where(input[type="text"],
+:where(input:not([type]),
+input[type="text"],
 input[type="number"],
 textarea,
 select):hover {
   border-color: var(--text-muted);
 }
 
-:where(input[type="text"],
+:where(input:not([type]),
+input[type="text"],
 input[type="number"],
 textarea,
 select):focus {
@@ -381,14 +386,14 @@ select.select-sm {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--accent-500), var(--accent-600));
+  background: linear-gradient(135deg, var(--accent-300), var(--accent-500));
   color: white;
-  box-shadow: 0 2px 8px -2px var(--accent-500);
+  box-shadow: 0 2px 8px -2px var(--accent-300);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--accent-600), var(--accent-700));
-  box-shadow: 0 4px 12px -2px var(--accent-500);
+  background: linear-gradient(135deg, var(--accent-400), var(--accent-600));
+  box-shadow: 0 4px 12px -2px var(--accent-400);
   transform: translateY(-1px);
 }
 
@@ -408,27 +413,332 @@ select.select-sm {
 }
 
 .btn-success {
-  background: linear-gradient(135deg, var(--success-500), var(--success-600));
+  background: linear-gradient(135deg, var(--accent-500), var(--accent-600));
   color: white;
-  box-shadow: 0 2px 8px -2px var(--success-500);
+  box-shadow: 0 2px 8px -2px var(--accent-400);
+  border: 1px solid transparent;
 }
 
 .btn-success:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--success-600), var(--success-700));
-  box-shadow: 0 4px 12px -2px var(--success-500);
+  background: linear-gradient(135deg, var(--accent-600), var(--accent-700));
+  box-shadow: 0 4px 12px -2px var(--accent-500);
   transform: translateY(-1px);
 }
+
+/* Dark mode - vibrant purple for success buttons */
+.dark .btn-success {
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  color: #f3e8ff;
+  box-shadow: 0 2px 8px -2px rgba(124, 58, 237, 0.5);
+  border: 1px solid rgba(167, 139, 250, 0.2);
+}
+
+.dark .btn-success:hover:not(:disabled) {
+  background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+  box-shadow: 0 4px 12px -2px rgba(139, 92, 246, 0.5);
+  border-color: rgba(167, 139, 250, 0.4);
+}
+
+/* ============================================
+   Witchy Validation States
+   ============================================ */
+.validation-valid {
+  border-color: #8b5cf6 !important;
+  background-color: rgba(139, 92, 246, 0.08) !important;
+}
+
+.validation-valid-icon {
+  color: #a78bfa;
+}
+
+.validation-valid-border {
+  border-color: #8b5cf6;
+}
+
+.validation-valid-bg {
+  background-color: rgba(139, 92, 246, 0.15);
+}
+
+.validation-valid-text {
+  color: #a78bfa;
+}
+
+.dark .validation-valid {
+  border-color: #a78bfa !important;
+  background-color: rgba(167, 139, 250, 0.12) !important;
+}
+
+.dark .validation-valid-icon {
+  color: #c4b5fd;
+}
+
+.dark .validation-valid-border {
+  border-color: #a78bfa;
+}
+
+.dark .validation-valid-bg {
+  background-color: rgba(167, 139, 250, 0.2);
+}
+
+.dark .validation-valid-text {
+  color: #c4b5fd;
+}
+
+/* Validation invalid (keeping error colors for clarity) */
+.validation-invalid {
+  border-color: var(--error-500) !important;
+  background-color: var(--error-50) !important;
+}
+
+.validation-invalid-icon {
+  color: var(--error-500);
+}
+
+/* Draft card states - witchy theme */
+.draft-pending {
+  border-left: 4px solid var(--accent-500);
+}
+
+.draft-done {
+  border-left: 4px solid #8b5cf6;
+}
+
+.draft-done-overlay {
+  background-color: rgba(139, 92, 246, 0.08);
+}
+
+.draft-done-badge {
+  background-color: rgba(139, 92, 246, 0.2);
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.dark .draft-done {
+  border-left-color: #a78bfa;
+}
+
+.dark .draft-done-overlay {
+  background-color: rgba(167, 139, 250, 0.1);
+}
+
+.dark .draft-done-badge {
+  background-color: rgba(167, 139, 250, 0.25);
+  color: #c4b5fd;
+  border-color: rgba(167, 139, 250, 0.4);
+}
+
+/* ============================================
+   Ruleset Accordion
+   ============================================ */
+.ruleset-accordion {
+  border: 1px solid var(--border-default);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: transparent;
+}
+
+.ruleset-accordion:hover {
+  border-color: rgba(139, 92, 246, 0.3);
+}
+
+.ruleset-header {
+  background: linear-gradient(135deg, var(--accent-100) 0%, var(--accent-50) 100%);
+  border: none;
+  border-bottom: 1px solid var(--accent-200);
+  transition: filter var(--transition-fast);
+  border-radius: 0;
+}
+
+.ruleset-header .ruleset-icon {
+  color: var(--accent-600);
+}
+
+.ruleset-header .ruleset-title {
+  color: var(--accent-900);
+}
+
+.ruleset-header .ruleset-subtitle {
+  color: var(--accent-600);
+}
+
+.ruleset-header .ruleset-chevron {
+  color: var(--accent-500);
+}
+
+/* Dark mode - use the vibrant gradient */
+.dark .ruleset-header {
+  background: linear-gradient(135deg, #5b21b6 0%, #7c3aed 50%, #6d28d9 100%);
+  border-bottom: none;
+}
+
+.dark .ruleset-header .ruleset-icon {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.dark .ruleset-header .ruleset-title {
+  color: white;
+}
+
+.dark .ruleset-header .ruleset-subtitle {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.dark .ruleset-header .ruleset-chevron {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.ruleset-header:hover {
+  filter: brightness(1.1);
+}
+
+.ruleset-header:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: -2px;
+}
+
+.ruleset-chevron {
+  transition: transform var(--transition-normal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ruleset-chevron.expanded {
+  transform: rotate(180deg);
+}
+
+.ruleset-content-inner {
+  animation: accordionFadeIn 0.25s ease-out;
+}
+
+@keyframes accordionFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ============================================
+   Invoicing Rules - Drag and Drop (dnd-kit)
+   ============================================ */
+.invoicing-rule-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: var(--radius-md);
+  background-color: var(--bg-surface);
+  border: 2px solid transparent;
+  transition:
+    border-color var(--transition-fast),
+    background-color var(--transition-fast),
+    opacity var(--transition-fast);
+  user-select: none;
+  /* GPU-accelerate for smooth dragging */
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+.invoicing-rule-item:hover:not(.dragging) {
+  border-color: var(--border-default);
+}
+
+.invoicing-rule-item.dragging {
+  /* Placeholder styling - shows where the item came from */
+  opacity: 0.4 !important;
+  border-color: var(--accent-300);
+  border-style: dashed;
+  background-color: color-mix(in srgb, var(--accent-100) 50%, var(--bg-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-500) 15%, transparent);
+}
+
+/* Ghost overlay that follows cursor */
+.invoicing-rule-ghost {
+  background-color: var(--bg-surface);
+  border: 2px solid var(--accent-500) !important;
+  border-radius: var(--radius-md);
+  /* Elevated shadow for floating effect */
+  box-shadow: 
+    0 10px 25px rgba(0, 0, 0, 0.15),
+    0 4px 10px rgba(0, 0, 0, 0.1),
+    0 0 0 1px color-mix(in srgb, var(--accent-500) 20%, transparent);
+  cursor: grabbing;
+  /* GPU-accelerate */
+  will-change: transform;
+  backface-visibility: hidden;
+  /* Disable all interactions on the ghost */
+  pointer-events: none;
+  /* Ensure it's not transparent during drag */
+  opacity: 1 !important;
+}
+
+.invoicing-rule-ghost * {
+  pointer-events: none !important;
+}
+
+.invoicing-rule-ghost .drag-handle {
+  color: var(--accent-500);
+  cursor: grabbing;
+}
+
+.invoicing-rule-item .drag-handle {
+  flex-shrink: 0;
+  padding: 0.25rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: grab;
+  touch-action: none;
+  transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.invoicing-rule-item .drag-handle:hover {
+  color: var(--accent-500);
+  background-color: var(--bg-muted);
+}
+
+.invoicing-rule-item .drag-handle:active {
+  cursor: grabbing;
+}
+
+.invoicing-rule-item .rule-condition-select {
+  width: 9rem;
+  flex-shrink: 0;
+}
+
+.invoicing-rule-item .rule-arrow {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.invoicing-rule-item .rule-company-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.invoicing-rule-item .rule-delete-btn {
+  flex-shrink: 0;
+  color: var(--error-500);
+}
+
+
+
 
 /* ============================================
    Witchy Cauldron Button - Mystical Generate
    ============================================ */
 .btn-cauldron {
-  --cauldron-deep: #2d1b4e;
-  --cauldron-purple: #5b21b6;
-  --cauldron-violet: #7c3aed;
-  --cauldron-orchid: #a855f7;
-  --cauldron-pink: #c084fc;
-  --cauldron-glow: rgba(139, 92, 246, 0.5);
+  /* Light mode: Indigo/Blue theme */
+  --cauldron-deep: var(--accent-700);
+  --cauldron-purple: var(--accent-600);
+  --cauldron-violet: var(--accent-500);
+  --cauldron-orchid: var(--accent-400);
+  --cauldron-pink: var(--accent-300);
+  --cauldron-glow: rgba(99, 102, 241, 0.5);
   
   position: relative;
   background: linear-gradient(
@@ -440,16 +750,33 @@ select.select-sm {
     var(--cauldron-deep) 100%
   );
   background-size: 200% 200%;
+  color: white;
+  border: 1px solid var(--accent-400);
+  box-shadow: 
+    0 0 15px rgba(99, 102, 241, 0.2),
+    0 4px 12px -3px rgba(79, 70, 229, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  animation: cauldronSimmer 8s ease-in-out infinite;
+  overflow: hidden;
+  transform: translateY(0) translateZ(0);
+  will-change: transform;
+}
+
+/* Dark mode: Vibrant purple theme */
+.dark .btn-cauldron {
+  --cauldron-deep: #2d1b4e;
+  --cauldron-purple: #5b21b6;
+  --cauldron-violet: #7c3aed;
+  --cauldron-orchid: #a855f7;
+  --cauldron-pink: #c084fc;
+  --cauldron-glow: rgba(139, 92, 246, 0.5);
+  
   color: #f3e8ff;
   border: 1px solid rgba(167, 139, 250, 0.3);
   box-shadow: 
     0 0 15px rgba(139, 92, 246, 0.2),
     0 4px 12px -3px rgba(91, 33, 182, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  animation: cauldronSimmer 8s ease-in-out infinite;
-  overflow: hidden;
-  transform: translateY(0) translateZ(0);
-  will-change: transform;
 }
 
 /* Outer glow wrapper (opacity-only animation, smooth + fast) */
@@ -464,12 +791,26 @@ select.select-sm {
   inset: -18px;
   border-radius: calc(var(--radius-md) + 18px);
   pointer-events: none;
-  /* Put the glow behind nearby siblings (avoid the “dark slab” overlay bug) */
+  /* Put the glow behind nearby siblings (avoid the "dark slab" overlay bug) */
   z-index: -1;
   opacity: 0;
   transition: opacity 420ms cubic-bezier(0.165, 0.84, 0.44, 1);
   will-change: opacity;
-  /* Use a rendered glow “plate” and fade its opacity (GPU-friendly) */
+  /* Light mode: Indigo glow */
+  background: radial-gradient(
+    ellipse at center,
+    rgba(99, 102, 241, 0.35) 0%,
+    rgba(79, 70, 229, 0.22) 35%,
+    rgba(79, 70, 229, 0.10) 55%,
+    transparent 72%
+  );
+  filter: blur(14px);
+  transform: translateZ(0);
+  mix-blend-mode: screen;
+}
+
+/* Dark mode: Purple glow */
+.dark .cauldron-wrap::after {
   background: radial-gradient(
     ellipse at center,
     rgba(167, 139, 250, 0.35) 0%,
@@ -477,9 +818,6 @@ select.select-sm {
     rgba(139, 92, 246, 0.10) 55%,
     transparent 72%
   );
-  filter: blur(14px);
-  transform: translateZ(0);
-  mix-blend-mode: screen;
 }
 
 /* Ensure the button stays above its glow */
@@ -494,6 +832,10 @@ select.select-sm {
 
 .cauldron-wrap.is-hovered:not(.is-disabled) .btn-cauldron {
   transform: translateY(-2px) translateZ(0);
+  border-color: var(--accent-300);
+}
+
+.dark .cauldron-wrap.is-hovered:not(.is-disabled) .btn-cauldron {
   border-color: rgba(196, 181, 253, 0.5);
 }
 
@@ -530,12 +872,19 @@ select.select-sm {
 .btn-cauldron:active:not(:disabled) {
   transform: translateY(0) translateZ(0);
   box-shadow: 
-    0 0 10px rgba(139, 92, 246, 0.35),
-    0 2px 8px -2px rgba(91, 33, 182, 0.4),
+    0 0 10px rgba(99, 102, 241, 0.35),
+    0 2px 8px -2px rgba(79, 70, 229, 0.4),
     inset 0 2px 4px rgba(0, 0, 0, 0.15);
   transition: 
     transform 0.08s ease-out,
     box-shadow 0.08s ease-out;
+}
+
+.dark .btn-cauldron:active:not(:disabled) {
+  box-shadow: 
+    0 0 10px rgba(139, 92, 246, 0.35),
+    0 2px 8px -2px rgba(91, 33, 182, 0.4),
+    inset 0 2px 4px rgba(0, 0, 0, 0.15);
 }
 
 /* Simmering gradient animation - smoother timing */
@@ -564,6 +913,20 @@ select.select-sm {
   border-radius: 50%;
   background: radial-gradient(
     circle at 30% 30%,
+    rgba(224, 231, 255, 0.9),
+    rgba(165, 180, 252, 0.6) 40%,
+    rgba(99, 102, 241, 0.3) 70%,
+    transparent
+  );
+  box-shadow: 
+    inset 0 0 4px rgba(255, 255, 255, 0.4),
+    0 0 6px rgba(99, 102, 241, 0.5);
+  animation: bubbleFloat ease-out forwards;
+}
+
+.dark .cauldron-bubble {
+  background: radial-gradient(
+    circle at 30% 30%,
     rgba(221, 214, 254, 0.9),
     rgba(167, 139, 250, 0.6) 40%,
     rgba(139, 92, 246, 0.3) 70%,
@@ -572,7 +935,6 @@ select.select-sm {
   box-shadow: 
     inset 0 0 4px rgba(255, 255, 255, 0.4),
     0 0 6px rgba(167, 139, 250, 0.5);
-  animation: bubbleFloat ease-out forwards;
 }
 
 @keyframes bubbleFloat {
@@ -730,6 +1092,15 @@ select.select-sm {
   }
 }
 
+@keyframes opacityFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 @keyframes slideIn {
   from {
     opacity: 0;
@@ -737,7 +1108,7 @@ select.select-sm {
   }
   to {
     opacity: 1;
-    transform: translateX(0);
+    transform: none;
   }
 }
 
@@ -748,7 +1119,7 @@ select.select-sm {
   }
   to {
     opacity: 1;
-    transform: scale(1);
+    transform: none;
   }
 }
 
@@ -794,7 +1165,7 @@ select.select-sm {
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: none;
   }
 }
 
@@ -1543,3 +1914,4 @@ tr:hover td {
   font-family: var(--font-mono);
   font-size: 0.6875rem;
 }
+

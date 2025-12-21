@@ -1,14 +1,23 @@
 import { useState, useEffect, memo } from 'react';
 import { Receipt } from 'lucide-react';
 import { openPath } from '@tauri-apps/plugin-opener';
+import { Select, SelectOption, findOption } from './Select';
 import styles from './ExtraItem.module.css';
+
+type Currency = 'CZK' | 'EUR' | 'USD';
+
+const CURRENCY_OPTIONS: SelectOption<Currency>[] = [
+  { value: 'CZK', label: 'CZK' },
+  { value: 'EUR', label: 'EUR' },
+  { value: 'USD', label: 'USD' },
+];
 
 interface ExtraItemProps {
   fileName: string;
   filePath: string;
   value: number;
-  currency: 'CZK' | 'EUR' | 'USD';
-  onUpdate: (value: number, currency: 'CZK' | 'EUR' | 'USD', selected: boolean) => void;
+  currency: Currency;
+  onUpdate: (value: number, currency: Currency, selected: boolean) => void;
 }
 
 function ExtraItem({ fileName, filePath, value, currency, onUpdate }: ExtraItemProps) {
@@ -22,7 +31,7 @@ function ExtraItem({ fileName, filePath, value, currency, onUpdate }: ExtraItemP
   const numericValue = localValue === '' ? 0 : Number(localValue);
   const isActive = numericValue > 0 || isFocused;
 
-  const commitValue = (newCurrency: 'CZK' | 'EUR' | 'USD' = currency) => {
+  const commitValue = (newCurrency: Currency = currency) => {
     onUpdate(numericValue, newCurrency, numericValue > 0);
   };
 
@@ -46,9 +55,10 @@ function ExtraItem({ fileName, filePath, value, currency, onUpdate }: ExtraItemP
     }
   };
 
-  const handleCurrencyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newCurrency = e.target.value as 'CZK' | 'EUR' | 'USD';
-    onUpdate(numericValue, newCurrency, numericValue > 0);
+  const handleCurrencyChange = (opt: SelectOption<Currency> | null) => {
+    if (opt) {
+      onUpdate(numericValue, opt.value, numericValue > 0);
+    }
   };
 
   return (
@@ -69,15 +79,17 @@ function ExtraItem({ fileName, filePath, value, currency, onUpdate }: ExtraItemP
         className={styles.valueInput}
       />
 
-      <select
-        value={currency}
-        onChange={handleCurrencyChange}
-        className={styles.currencySelect}
-      >
-        <option value="CZK">CZK</option>
-        <option value="EUR">EUR</option>
-        <option value="USD">USD</option>
-      </select>
+      <div className={styles.currencySelect}>
+        <Select<Currency>
+          value={findOption(CURRENCY_OPTIONS, currency)}
+          onChange={handleCurrencyChange}
+          options={CURRENCY_OPTIONS}
+          isSearchable={false}
+          size="sm"
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+        />
+      </div>
     </div>
   );
 }

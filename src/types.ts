@@ -30,6 +30,7 @@ export interface Ruleset {
   periodicity: PeriodicityType;
   periodicityCustomValue?: number;
   entitlementDay: number;
+  dueDateOffsetDays?: number; // Days from current date for due date (default: 14)
   minimizeInvoices?: boolean;
   salaryRules: SalaryRule[];
   rules: CustomerRule[];

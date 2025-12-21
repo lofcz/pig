@@ -4,6 +4,8 @@ import { Config, ThemePreference } from './types';
 import Generator from './components/Generator';
 import ConfigEditor, { ConfigEditorRef } from './components/ConfigEditor';
 import { ThemeProvider, Theme, useTheme } from './contexts/ThemeContext';
+import { ConfirmModalProvider } from './contexts/ConfirmModalContext';
+import { PromptModalProvider } from './contexts/PromptModalContext';
 import { Toaster } from 'sonner';
 import { FileText, Settings, Save, Loader2 } from 'lucide-react';
 import './App.css';
@@ -86,8 +88,8 @@ function AppContent({ config, setConfig }: { config: Config; setConfig: (c: Conf
               <div 
                 className="w-10 h-10 rounded-xl flex items-center justify-center"
                 style={{ 
-                  background: 'linear-gradient(135deg, var(--accent-500), var(--accent-600))',
-                  boxShadow: '0 4px 12px -2px var(--accent-500)'
+                  background: 'linear-gradient(147deg, var(--accent-400), var(--accent-500))',
+                  boxShadow: '0 0px 6px 0px var(--accent-500)'
                 }}
               >
                 <FileText size={22} className="text-white" />
@@ -97,13 +99,13 @@ function AppContent({ config, setConfig }: { config: Config; setConfig: (c: Conf
                   className="text-xl font-bold"
                   style={{ color: 'var(--text-primary)' }}
                 >
-                  Invoice Generator
+                  Personal Invoice Generator
                 </h1>
                 <p 
                   className="text-xs font-medium"
                   style={{ color: 'var(--text-muted)' }}
                 >
-                  Personal • Professional • Fast
+                  Infinite • Money • Glitch
                 </p>
               </div>
             </div>
@@ -250,8 +252,12 @@ function App() {
       initialTheme={config.theme || 'system'} 
       onThemeChange={handleThemeChange}
     >
-      <AppContent config={config} setConfig={setConfig} />
-      <ThemedToaster />
+      <ConfirmModalProvider>
+        <PromptModalProvider>
+          <AppContent config={config} setConfig={setConfig} />
+          <ThemedToaster />
+        </PromptModalProvider>
+      </ConfirmModalProvider>
     </ThemeProvider>
   );
 }
