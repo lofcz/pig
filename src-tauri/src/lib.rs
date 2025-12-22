@@ -2,6 +2,11 @@
 use mail_builder::MessageBuilder;
 use mail_send::SmtpClientBuilder;
 use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::{Read, Write};
+use std::path::Path;
+use zip::write::SimpleFileOptions;
+use zip::ZipWriter;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -114,6 +119,65 @@ async fn send_email(request: SendEmailRequest) -> Result<SendEmailResponse, Stri
     })
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateZipRequest {
+    pub file_paths: Vec<String>,
+    pub output_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateZipResponse {
+    pub success: bool,
+    pub message: String,
+    pub output_path: String,
+    pub size: u64,
+}
+
+#[tauri::command]
+fn create_zip(request: CreateZipRequest) -> Result<CreateZipResponse, String> {
+    let output_file = File::create(&request.output_path)
+        .map_err(|e| format!("Failed to create zip file: {}", e))?;
+    
+    let mut zip = ZipWriter::new(output_file);
+    let options = SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .compression_level(Some(6));
+    
+    for file_path in &request.file_paths {
+        let path = Path::new(file_path);
+        let file_name = path.file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| format!("Invalid file name: {}", file_path))?;
+        
+        let mut file = File::open(path)
+            .map_err(|e| format!("Failed to open file {}: {}", file_path, e))?;
+        
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)
+            .map_err(|e| format!("Failed to read file {}: {}", file_path, e))?;
+        
+        zip.start_file(file_name, options)
+            .map_err(|e| format!("Failed to add file to zip: {}", e))?;
+        
+        zip.write_all(&buffer)
+            .map_err(|e| format!("Failed to write to zip: {}", e))?;
+    }
+    
+    zip.finish()
+        .map_err(|e| format!("Failed to finalize zip: {}", e))?;
+    
+    // Get the file size
+    let metadata = std::fs::metadata(&request.output_path)
+        .map_err(|e| format!("Failed to get zip metadata: {}", e))?;
+    
+    Ok(CreateZipResponse {
+        success: true,
+        message: format!("Created zip with {} files", request.file_paths.len()),
+        output_path: request.output_path,
+        size: metadata.len(),
+    })
+}
+
 #[tauri::command]
 async fn test_smtp_connection(smtp: SmtpConfig) -> Result<SendEmailResponse, String> {
     // Just try to connect to verify credentials
@@ -148,7 +212,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
-        .invoke_handler(tauri::generate_handler![greet, send_email, test_smtp_connection])
+        .invoke_handler(tauri::generate_handler![greet, send_email, test_smtp_connection, create_zip])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

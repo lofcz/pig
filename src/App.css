@@ -2199,6 +2199,23 @@ tr:hover td {
 }
 
 /* Actions */
+.generate-all-actions-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.generate-all-btn-full {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
 .generate-all-actions {
   display: flex;
   gap: 0.75rem;
@@ -2266,5 +2283,507 @@ input[type="password"]::-ms-clear,
 input[type="password"]::-webkit-credentials-auto-fill-button,
 input[type="password"]::-webkit-clear-button {
   display: none !important;
+}
+
+/* ============================================
+   Email Task List (inside GenerateAllModal)
+   ============================================ */
+.generate-all-email-list {
+  padding: 2rem;
+}
+
+.generate-all-empty {
+  text-align: center;
+  padding: 2rem;
+}
+
+.email-task-list {
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 1.5rem 0;
+}
+
+.email-task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  border-radius: var(--radius-lg);
+  margin-bottom: 0.5rem;
+  background: var(--bg-base);
+  border: 1px solid var(--border-default);
+  transition: all 0.2s ease;
+}
+
+.email-task-item.current {
+  border-color: var(--accent-300);
+  background: var(--accent-50);
+  box-shadow: 0 0 0 3px var(--accent-100);
+}
+
+.email-task-item.sent {
+  background: var(--success-50);
+  border-color: var(--success-200);
+}
+
+.email-task-item.skipped {
+  opacity: 0.6;
+}
+
+.email-task-sent-badge,
+.email-task-skipped-badge,
+.email-task-error-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.email-task-sent-badge {
+  background: var(--success-100);
+  color: var(--success-600);
+}
+
+.email-task-skipped-badge {
+  background: var(--bg-muted);
+  color: var(--text-muted);
+}
+
+.email-task-error-badge {
+  background: var(--error-100);
+  color: var(--error-600);
+}
+
+.email-task-item.error {
+  background: var(--error-50);
+  border-color: var(--error-200);
+}
+
+.email-task-status {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.email-task-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-subtle);
+}
+
+.email-task-dot.current {
+  background: var(--accent-500);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.email-task-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.email-task-recipient {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9375rem;
+}
+
+.email-task-contact {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.email-task-email {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
+.email-task-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.375rem;
+  flex-wrap: wrap;
+}
+
+.email-task-invoices,
+.email-task-customers {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.email-task-amount {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  color: var(--accent-600);
+}
+
+.email-task-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* ============================================
+   Email Composer (inside GenerateAllModal)
+   ============================================ */
+.generate-all-composer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 80vh;
+}
+
+.composer-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-muted);
+}
+
+.composer-header-info {
+  flex: 1;
+}
+
+.composer-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.composer-subtitle {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.composer-section {
+  padding: 0.75rem 1.5rem;
+}
+
+.composer-label {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.composer-body-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.composer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-default);
+  border-bottom: none;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.composer-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.composer-toolbar-divider {
+  width: 1px;
+  height: 1.25rem;
+  background: var(--border-default);
+  margin: 0 0.375rem;
+}
+
+.composer-toolbar-btn {
+  padding: 0.375rem;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.composer-toolbar-btn:hover {
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+}
+
+.composer-toolbar-btn.active {
+  background: var(--accent-100);
+  color: var(--accent-600);
+}
+
+.composer-toolbar-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.composer-color-picker-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.color-swatch-picker {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  min-width: 180px;
+}
+
+.color-swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.375rem;
+  margin-bottom: 0.75rem;
+}
+
+.color-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: 2px solid transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.color-swatch:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.color-swatch.active {
+  border-color: var(--accent-500);
+  box-shadow: 0 0 0 2px var(--accent-200);
+}
+
+.color-swatch.none {
+  background: var(--bg-muted);
+  border: 1px dashed var(--border-default);
+  color: var(--text-muted);
+  text-shadow: none;
+}
+
+.color-swatch-custom {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.color-swatch-custom-label {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.color-swatch-custom-input {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  background: transparent;
+}
+
+.color-swatch-custom-input::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.color-swatch-custom-input::-webkit-color-swatch {
+  border: none;
+  border-radius: 2px;
+}
+
+.color-swatch-custom-apply {
+  flex: 1;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  background: var(--accent-500);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.color-swatch-custom-apply:hover {
+  background: var(--accent-600);
+}
+
+.composer-editor {
+  flex: 1;
+  min-height: 120px;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--border-default);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  padding: 0.75rem;
+  background: var(--bg-surface);
+}
+
+.composer-editor-content .ProseMirror {
+  outline: none;
+  min-height: 100px;
+}
+
+.composer-editor-content .ProseMirror p {
+  margin: 0.375em 0;
+}
+
+.composer-attachments-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.composer-add-attachment {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.composer-add-attachment:hover {
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+}
+
+.composer-no-attachments {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.composer-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.composer-attachment {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-muted);
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
+}
+
+.composer-attachment-name {
+  flex: 1;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-attachment-size {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.composer-attachment-action {
+  padding: 0.25rem;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
+}
+
+.composer-attachment-action:hover {
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+}
+
+.composer-attachment-action.delete:hover {
+  background: var(--error-100);
+  color: var(--error-500);
+}
+
+
+.composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-muted);
+}
+
+/* Animation keyframes */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.1);
+  }
 }
 

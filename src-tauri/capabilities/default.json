@@ -22,6 +22,8 @@
     "fs:allow-write-file",
     "fs:allow-mkdir",
     "fs:allow-rename",
+    "fs:allow-stat",
+    "fs:allow-read",
     "shell:allow-execute",
     {
       "identifier": "shell:allow-execute",
@@ -41,7 +43,7 @@
     "shell:allow-open",
     {
       "identifier": "fs:scope",
-      "allow": ["$HOME/**", "**"]
+      "allow": ["$HOME/**", "**", "C:/**", "D:/**", "E:/**"]
     }
   ]
 }

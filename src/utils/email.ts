@@ -101,3 +101,25 @@ export async function fileToBase64Attachment(
   };
 }
 
+export interface CreateZipResponse {
+  success: boolean;
+  message: string;
+  output_path: string;
+  size: number;
+}
+
+/**
+ * Create a zip file from multiple files using Rust for speed
+ */
+export async function createZip(
+  filePaths: string[],
+  outputPath: string
+): Promise<CreateZipResponse> {
+  return await invoke<CreateZipResponse>('create_zip', {
+    request: {
+      file_paths: filePaths,
+      output_path: outputPath,
+    },
+  });
+}
+

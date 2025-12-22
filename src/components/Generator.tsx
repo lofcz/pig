@@ -107,6 +107,7 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
   
   const [generateAllModalOpen, setGenerateAllModalOpen] = useState(false);
   const [generateAllInvoicesSnapshot, setGenerateAllInvoicesSnapshot] = useState<Array<{ id: string; label: string; amount: number }>>([]);
+  const [generateAllExtraFilesSnapshot, setGenerateAllExtraFilesSnapshot] = useState<Array<{ path: string; name: string }>>([]);
 
   // AI Analysis state
   const [analyzing, setAnalyzing] = useState(false);
@@ -669,21 +670,81 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
     }
   }
 
+  // Helper to find customer for a draft based on ruleset rules
+  const findCustomerForDraft = (draft: InvoiceDraft): CompanyDetails | undefined => {
+    const ruleset = config.rulesets.find(r => r.id === draft.rulesetId);
+    if (!ruleset) return undefined;
+    
+    for (const rule of ruleset.rules) {
+      let match = false;
+      if (rule.condition === 'odd') match = (draft.month % 2 !== 0);
+      else if (rule.condition === 'even') match = (draft.month % 2 === 0);
+      else if (rule.condition === 'default') match = true;
+      
+      if (match) {
+        const customer = config.companies.find(c => c.id === rule.companyId);
+        if (customer) return customer;
+      }
+    }
+    return undefined;
+  };
+
   const openGenerateAllModal = () => {
     // Freeze the invoices list for the whole modal session so parent re-renders (sync)
     // can't cause the modal to suddenly show "0 of 0".
     const regularDrafts = drafts
       .filter(d => d.status !== 'done')
-      .map(d => ({ id: d.id, label: d.label, amount: d.amount }));
+      .map(d => {
+        const customer = findCustomerForDraft(d);
+        const ruleset = config.rulesets.find(r => r.id === d.rulesetId);
+        const dueDateOffsetDays = ruleset?.dueDateOffsetDays ?? 14;
+        
+        // Calculate issue date and due date
+        let day = 1;
+        if (d.invoiceNoOverride.length === 8) {
+          day = parseInt(d.invoiceNoOverride.substring(0, 2));
+        }
+        const issueDate = new Date(d.year, d.month - 1, day);
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + dueDateOffsetDays);
+        
+        return {
+          id: d.id,
+          label: d.label,
+          amount: d.amount,
+          customerId: customer?.id,
+          invoiceNo: d.invoiceNoOverride,
+          issueDate: `${issueDate.getDate()}. ${issueDate.getMonth() + 1}. ${issueDate.getFullYear()}`,
+          dueDate: `${dueDate.getDate()}. ${dueDate.getMonth() + 1}. ${dueDate.getFullYear()}`,
+          description: d.description,
+        };
+      });
     
     // Include adhoc invoices with a special prefix
-    const adhocDrafts = adhocInvoices.map(inv => ({
-      id: `adhoc:${inv.id}`,
-      label: inv.name,
-      amount: inv.value
-    }));
+    const adhocDrafts = adhocInvoices.map(inv => {
+      const issueDate = new Date(inv.issueDate);
+      const dueDate = new Date(inv.dueDate);
+      return {
+        id: `adhoc:${inv.id}`,
+        label: inv.name,
+        amount: inv.value,
+        customerId: inv.customerId,
+        invoiceNo: inv.invoiceNo,
+        issueDate: `${issueDate.getDate()}. ${issueDate.getMonth() + 1}. ${issueDate.getFullYear()}`,
+        dueDate: `${dueDate.getDate()}. ${dueDate.getMonth() + 1}. ${dueDate.getFullYear()}`,
+        description: inv.description,
+      };
+    });
     
     setGenerateAllInvoicesSnapshot([...regularDrafts, ...adhocDrafts]);
+    // Snapshot extra files with DESTINATION paths (files will be moved from proplatit to proplaceno)
+    setGenerateAllExtraFilesSnapshot(
+      selectedProplatitFiles.map(item => ({
+        // Replace 'proplatit' with 'proplaceno' in the path since files get moved during generation
+        path: item.file.path.replace(/proplatit([\\\/])/i, 'proplaceno$1'),
+        name: item.file.name
+      }))
+    );
     setGenerateAllModalOpen(true);
   };
 
@@ -1730,12 +1791,15 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
         onClose={() => {
           setGenerateAllModalOpen(false);
           setGenerateAllInvoicesSnapshot([]);
+          setGenerateAllExtraFilesSnapshot([]);
         }}
         invoices={generateAllInvoicesSnapshot}
         primaryCurrency={config.primaryCurrency}
         onGenerateInvoice={handleGenerateById}
         rootPath={config.rootPath}
         onComplete={handleGenerateAllComplete}
+        config={config}
+        extraFiles={generateAllExtraFilesSnapshot}
       />
 
       {/* Adhoc Invoice Modal - spawned dynamically */}
