@@ -27,5 +27,5 @@ src-tauri/cfg.json
 .idea
 .vs
 /reference
-/src/templates
+/src/src/templates
 /tools
