@@ -9,6 +9,7 @@ import { CompanyListEditor } from './CompanyListEditor';
 import { ContactsEditor } from './ContactsEditor';
 import { RulesetsEditor } from './RulesetsEditor';
 import { EmailTemplatesEditor } from './EmailTemplatesEditor';
+import { HScrollArea } from './ScrollArea';
 import { createDefaultTemplate } from '../utils/emailTemplates';
 import { toast } from 'sonner';
 import {
@@ -16,23 +17,53 @@ import {
   Users,
   Layers,
   Settings2,
-  Mail
+  Mail,
+  LucideIcon
 } from 'lucide-react';
+
+// Settings tabs configuration - exported for use in mobile navigation
+export type SettingsTabId = 'general' | 'supplier' | 'customers' | 'contacts' | 'emailTemplates' | 'rulesets';
+
+export interface SettingsTab {
+  id: SettingsTabId;
+  label: string;
+  icon: LucideIcon;
+}
+
+export const SETTINGS_TABS: SettingsTab[] = [
+  { id: 'general', label: 'General', icon: Settings2 },
+  { id: 'supplier', label: 'Suppliers', icon: Building2 },
+  { id: 'customers', label: 'Customers', icon: Users },
+  { id: 'contacts', label: 'Contacts', icon: Users },
+  { id: 'emailTemplates', label: 'E-mails', icon: Mail },
+  { id: 'rulesets', label: 'Rulesets', icon: Layers },
+];
 
 interface ConfigEditorProps {
   config: Config;
   onSave: (newConfig: Config) => void;
   onCancel: () => void;
   isVisible?: boolean;
+  initialTab?: SettingsTabId;
 }
 
 export interface ConfigEditorRef {
   save: () => Promise<void>;
+  setTab: (tab: SettingsTabId) => void;
 }
 
-const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, onSave, isVisible }, ref) => {
+const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, onSave, isVisible, initialTab }, ref) => {
   const [localConfig, setLocalConfig] = useState<Config>(JSON.parse(JSON.stringify(config)));
-  const [activeTab, setActiveTab] = useState<'general' | 'supplier' | 'customers' | 'contacts' | 'emailTemplates' | 'rulesets'>('general');
+  const activeTabRef = useRef<SettingsTabId>(initialTab ?? 'general');
+  const [, forceUpdate] = useState({});
+  
+  const activeTab = activeTabRef.current;
+  const setActiveTab = (tab: SettingsTabId) => {
+    if (activeTabRef.current !== tab) {
+      activeTabRef.current = tab;
+      forceUpdate({});
+    }
+  };
   const confirm = useConfirm();
   const prompt = usePrompt();
   
@@ -64,9 +95,10 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
     }
   };
 
-  // Expose save function to parent via ref
+  // Expose functions to parent via ref
   useImperativeHandle(ref, () => ({
-    save: handleSave
+    save: handleSave,
+    setTab: setActiveTab,
   }));
 
   // Company management
@@ -236,37 +268,29 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
     }
   };
 
-  // Tab configuration
-  const tabs = [
-    { id: 'general' as const, label: 'General', icon: Settings2 },
-    { id: 'supplier' as const, label: 'Suppliers', icon: Building2 },
-    { id: 'customers' as const, label: 'Customers', icon: Users },
-    { id: 'contacts' as const, label: 'Contacts', icon: Users },
-    { id: 'emailTemplates' as const, label: 'E-mails', icon: Mail },
-    { id: 'rulesets' as const, label: 'Rulesets', icon: Layers },
-  ];
-
   return (
-    <div className="p-6 lg:p-8">
+    <div className="px-4 py-6 sm:px-6 lg:px-8">
       {/* Tab Navigation */}
-      <div className="tab-list mb-6">
-        {tabs.map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`tab-button flex items-center gap-2 ${activeTab === tab.id ? 'active' : ''}`}
-            >
-              <Icon size={18} />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
-      </div>
+      <HScrollArea className="tab-list-scroll mb-6 -mx-4 px-4 sm:mx-0 sm:px-0">
+        <div className="tab-list">
+          {SETTINGS_TABS.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`tab-button flex items-center gap-2 ${activeTab === tab.id ? 'active' : ''}`}
+              >
+                <Icon size={18} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </HScrollArea>
 
       {/* Tab Content */}
-      <div className="card p-6 lg:p-8">
+      <div className="card -mx-4 sm:mx-0 rounded-none sm:rounded-lg p-4 sm:p-6 lg:p-8">
         {activeTab === 'general' && (
           <GeneralSettingsTab
             config={localConfig}

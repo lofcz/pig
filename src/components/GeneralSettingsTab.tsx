@@ -51,8 +51,9 @@ export function GeneralSettingsTab({ config, onChange, apiKeysRef }: GeneralSett
       <div className="space-y-6">
         {/* Appearance Section */}
         <SettingsSection title="Appearance" icon={Palette}>
+          {/* Desktop: Toggle buttons */}
           <div 
-            className="inline-flex gap-1 p-1 rounded-xl"
+            className="hidden sm:inline-flex gap-1 p-1 rounded-xl"
             style={{ backgroundColor: 'var(--bg-surface)' }}
           >
             {themeOptions.map((option) => (
@@ -74,6 +75,31 @@ export function GeneralSettingsTab({ config, onChange, apiKeysRef }: GeneralSett
                 {option.icon}
                 <span>{option.label}</span>
               </button>
+            ))}
+          </div>
+          {/* Mobile: Radio buttons */}
+          <div className="sm:hidden space-y-2">
+            {themeOptions.map((option) => (
+              <label
+                key={option.value}
+                className="flex items-center gap-3 cursor-pointer"
+              >
+                <input
+                  type="radio"
+                  name="theme"
+                  value={option.value}
+                  checked={theme === option.value}
+                  onChange={() => setTheme(option.value)}
+                  className="w-4 h-4 accent-[var(--accent-500)]"
+                />
+                <span 
+                  className="flex items-center gap-2 text-sm"
+                  style={{ color: theme === option.value ? 'var(--text-primary)' : 'var(--text-muted)' }}
+                >
+                  {option.icon}
+                  <span>{option.label}</span>
+                </span>
+              </label>
             ))}
           </div>
         </SettingsSection>
@@ -104,8 +130,9 @@ export function GeneralSettingsTab({ config, onChange, apiKeysRef }: GeneralSett
             >
               Primary Currency
             </label>
+            {/* Desktop: Toggle buttons */}
             <div 
-              className="inline-flex gap-1 p-1 rounded-xl"
+              className="hidden sm:inline-flex gap-1 p-1 rounded-xl"
               style={{ backgroundColor: 'var(--bg-surface)' }}
             >
               {CURRENCY_OPTIONS.map((option) => (
@@ -127,6 +154,31 @@ export function GeneralSettingsTab({ config, onChange, apiKeysRef }: GeneralSett
                   <span className="font-mono">{option.symbol}</span>
                   <span>{option.value}</span>
                 </button>
+              ))}
+            </div>
+            {/* Mobile: Radio buttons */}
+            <div className="sm:hidden space-y-2">
+              {CURRENCY_OPTIONS.map((option) => (
+                <label
+                  key={option.value}
+                  className="flex items-center gap-3 cursor-pointer"
+                >
+                  <input
+                    type="radio"
+                    name="currency"
+                    value={option.value}
+                    checked={config.primaryCurrency === option.value}
+                    onChange={() => onChange({...config, primaryCurrency: option.value})}
+                    className="w-4 h-4 accent-[var(--accent-500)]"
+                  />
+                  <span 
+                    className="flex items-center gap-2 text-sm"
+                    style={{ color: config.primaryCurrency === option.value ? 'var(--text-primary)' : 'var(--text-muted)' }}
+                  >
+                    <span className="font-mono">{option.symbol}</span>
+                    <span>{option.value}</span>
+                  </span>
+                </label>
               ))}
             </div>
             <p className="text-xs mt-2" style={{ color: 'var(--text-subtle)' }}>

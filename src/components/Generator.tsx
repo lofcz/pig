@@ -1091,7 +1091,7 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
   const adhocTotalValue = adhocInvoices.reduce((sum, inv) => sum + inv.value, 0);
 
   return (
-    <div className="p-6 lg:p-8">
+    <div className="px-4 py-6 sm:px-6 lg:px-8">
       {showPageLoading ? (
         <div className="p-8 flex items-center justify-center min-h-[400px]">
           <div className="flex flex-col items-center gap-4">
