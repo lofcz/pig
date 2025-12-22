@@ -14,9 +14,7 @@ import {
   Moon,
   Monitor,
   Palette,
-  Terminal,
   Wand2,
-  Cog,
   Coins
 } from 'lucide-react';
 
@@ -227,7 +225,7 @@ export function GeneralSettingsTab({ config, onChange, apiKeysRef }: GeneralSett
 
 interface SettingsSectionProps {
   title: string;
-  icon: React.ComponentType<{ size?: number }>;
+  icon: React.ComponentType<{ size?: number; style?: React.CSSProperties }>;
   children: React.ReactNode;
 }
 
