@@ -1,7 +1,7 @@
 <h1 align="center">🐷 PIG</h1>
 <p align="center">
   <strong>Personal Invoice Generator</strong><br>
-  A beautiful, modern desktop app for generating professional invoices with automated scheduling, AI-powered document analysis, and integrated email delivery.
+  A beautiful, modern desktop app for generating professional invoices with automated scheduling, AI-powered document analysis, and integrated e-mail delivery.
 </p>
 
 <p align="center">
@@ -25,7 +25,7 @@
 - **ODT Template System** — Use LibreOffice/OpenOffice templates with placeholder substitution
 - **Automated Scheduling** — Define billing rules with flexible periodicity (monthly, quarterly, yearly, custom)
 - **AI-Powered Analysis** — Automatically extract amounts from receipts/invoices using Claude, GPT-4, or Gemini
-- **Email Integration** — Compose and send invoices directly via SMTP with rich HTML templates
+- **E-mail Integration** — Compose and send invoices directly via SMTP with rich HTML templates
 - **Multi-Currency** — Support for CZK, EUR, and USD with automatic exchange rate conversion
 - **File Management** — Track and manage "proplatit" (to-reimburse) files with automatic processing
 - **Secure Storage** — SMTP credentials and API keys are encrypted on disk
@@ -63,14 +63,14 @@ npm run tauri build
 2. **Create a ruleset** — Define billing periodicity, salary rules, and invoice templates
 3. **Add extra items** — Drop receipts/invoices into the "proplatit" folder for reimbursement tracking
 4. **Generate invoices** — Review pending invoices and generate them all at once
-5. **Send emails** — Compose and send invoices to customers with attached PDFs
+5. **Send s** — Compose and send invoices to customers with attached PDFs
 
 ### Workflow
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │  Configure      │ ──► │  Generate       │ ──► │  Send via       │
-│  Rulesets       │     │  Invoices       │     │  Email          │
+│  Rulesets       │     │  Invoices       │     │            │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
         │                       │                       │
         ▼                       ▼                       ▼
@@ -102,8 +102,8 @@ your-invoice-root/
 | **General** | Root path, LibreOffice path, currency settings, theme |
 | **Suppliers** | Your company details (name, address, IČ, DIČ, bank account) |
 | **Customers** | Client companies to invoice |
-| **Contacts** | Contact persons for email delivery |
-| **E-mails** | SMTP connectors and HTML email templates |
+| **Contacts** | Contact persons for  delivery |
+| **E-mails** | SMTP connectors and HTML  templates |
 | **Rulesets** | Billing rules, periodicity, salary schedules |
 
 ### Rulesets
@@ -118,7 +118,7 @@ Rulesets define when and how invoices are generated:
 
 ## Template Placeholders
 
-PIG uses two types of placeholders: **Invoice Placeholders** for ODT templates and **Email Placeholders** for email templates.
+PIG uses two types of placeholders: **Invoice Placeholders** for ODT templates and ** Placeholders** for  templates.
 
 ### Invoice Template Placeholders (ODT)
 
@@ -164,16 +164,16 @@ Use these in your LibreOffice/OpenOffice invoice templates:
 | `{{P_CUST_IC}}` | Company ID |
 | `{{P_CUST_DIC}}` | VAT ID |
 
-### Email Template Placeholders
+###  Template Placeholders
 
-Use these in email subjects and bodies. Supports both `{{placeholder}}` syntax and full [Eta template](https://eta.js.org/) syntax for advanced logic.
+Use these in  subjects and bodies. Supports both `{{placeholder}}` syntax and full [Eta template](https://eta.js.org/) syntax for advanced logic.
 
 #### Contact
 
 | Placeholder | Description |
 |-------------|-------------|
 | `{{contact.name}}` | Contact person's name |
-| `{{contact.email}}` | Contact email |
+| `{{contact.}}` | Contact  |
 | `{{contact.phone}}` | Contact phone |
 
 #### Single Invoice
@@ -222,7 +222,7 @@ Use these in email subjects and bodies. Supports both `{{placeholder}}` syntax a
 
 #### Advanced Eta Syntax
 
-Email templates support full Eta templating for complex scenarios:
+ templates support full Eta templating for complex scenarios:
 
 ```html
 <!-- Loop through invoices -->
