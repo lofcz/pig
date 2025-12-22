@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { loadConfig, saveTheme } from './utils/config';
+import { loadSmtpCredentials } from './utils/smtpCredentials';
 import { Config, ThemePreference } from './types';
 import Generator, { GeneratorRef } from './components/Generator';
 import ConfigEditor, { ConfigEditorRef, SETTINGS_TABS, SettingsTabId } from './components/ConfigEditor';
@@ -326,13 +327,13 @@ function AppContent({
             className="text-sm"
             style={{ color: 'var(--text-muted)' }}
           >
-            © {new Date().getFullYear()} PIG — Personal Invoice Generator
+            © {new Date().getFullYear()} <a href="https://github.com/lofcz" target='_blank'>Matěj Štágl</a>
           </p>
           <p 
             className="text-sm"
             style={{ color: 'var(--text-subtle)' }}
           >
-            v0.1.0
+            PIG v0.1.0
           </p>
         </div>
       </footer>
@@ -348,7 +349,15 @@ function App() {
   );
 
   useEffect(() => {
-    loadConfig().then((c) => {
+    // Load config and merge SMTP credentials
+    Promise.all([loadConfig(), loadSmtpCredentials()]).then(([c, credentials]) => {
+      // Merge SMTP passwords into connectors
+      if (c.emailConnectors) {
+        c.emailConnectors = c.emailConnectors.map(connector => ({
+          ...connector,
+          password: credentials[connector.id] || connector.password || ''
+        }));
+      }
       setConfig(c);
       setLoading(false);
     });

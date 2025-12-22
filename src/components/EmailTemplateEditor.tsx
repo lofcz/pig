@@ -18,6 +18,7 @@ import {
   Undo,
   Redo,
   ChevronDown,
+  ChevronUp,
   Variable,
   Heading1,
   Heading2,
@@ -25,6 +26,7 @@ import {
   Trash2,
   Code,
   Eye,
+  FileText,
 } from 'lucide-react';
 
 // Custom Div node that preserves all attributes
@@ -121,6 +123,7 @@ function unescapeEtaSyntax(html: string): string {
 }
 
 export function EmailTemplateEditor({ template, onChange, onRemove }: EmailTemplateEditorProps) {
+  const [isExpanded, setIsExpanded] = useState(true);
   const [showPlaceholderMenu, setShowPlaceholderMenu] = useState(false);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [editorMode, setEditorMode] = useState<'wysiwyg' | 'html'>('wysiwyg');
@@ -230,24 +233,60 @@ export function EmailTemplateEditor({ template, onChange, onRemove }: EmailTempl
   if (!editor) return null;
 
   return (
-    <div className="card p-5 space-y-4">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1">
-          <span className="badge badge-primary mb-2">{template.id}</span>
+    <div
+      className="rounded-lg overflow-hidden"
+      style={{
+        backgroundColor: 'var(--bg-surface)',
+        border: '1px solid var(--border-default)',
+      }}
+    >
+      {/* Accordion Header */}
+      <div
+        className="flex items-center justify-between p-4 cursor-pointer"
+        style={{ backgroundColor: 'var(--bg-muted)' }}
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="flex items-center gap-3">
+          <FileText size={20} style={{ color: 'var(--accent-500)' }} />
+          <div>
+            <span className="badge badge-primary mr-2">{template.id}</span>
+            <span
+              className="font-medium"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              {template.name || 'Unnamed Template'}
+            </span>
+            {template.subject && (
+              <span
+                className="ml-2 text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                — {template.subject.slice(0, 40)}{template.subject.length > 40 ? '...' : ''}
+              </span>
+            )}
+          </div>
         </div>
-        <button
-          onClick={onRemove}
-          className="btn btn-ghost btn-icon"
-          style={{ color: 'var(--error-500)' }}
-          title="Delete template"
-        >
-          <Trash2 size={18} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            className="btn btn-ghost btn-icon"
+            style={{ color: 'var(--error-500)' }}
+            title="Delete template"
+          >
+            <Trash2 size={18} />
+          </button>
+          {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+        </div>
       </div>
 
-      {/* Template Name */}
-      <div>
+      {/* Accordion Content */}
+      {isExpanded && (
+        <div className="p-4 space-y-4">
+          {/* Template Name */}
+          <div>
         <label
           className="text-xs font-semibold uppercase tracking-wide mb-1 block"
           style={{ color: 'var(--text-muted)' }}
@@ -625,6 +664,8 @@ export function EmailTemplateEditor({ template, onChange, onRemove }: EmailTempl
           pointer-events: none;
         }
       `}</style>
+        </div>
+      )}
     </div>
   );
 }

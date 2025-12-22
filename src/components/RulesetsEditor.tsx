@@ -13,6 +13,8 @@ import {
   FolderOpen,
   Layers,
   ChevronDown,
+  ChevronUp,
+  ChevronRight,
   Check,
   AlertTriangle,
   Calendar,
@@ -45,14 +47,82 @@ interface RulesetsEditorProps {
   companies: CompanyDetails[];
   primaryCurrency: Currency;
   onChange: (r: Ruleset[]) => void;
+  onAdd: () => void;
+  onRemove: (id: string) => void;
 }
 
-export function RulesetsEditor({ rulesets, companies, primaryCurrency, onChange }: RulesetsEditorProps) {
+interface AccordionSectionProps {
+  title: string;
+  subtitle: string;
+  icon: React.ReactNode;
+  isOpen: boolean;
+  onToggle: () => void;
+  headerAction?: React.ReactNode;
+  children: React.ReactNode;
+}
+
+function AccordionSection({
+  title,
+  subtitle,
+  icon,
+  isOpen,
+  onToggle,
+  headerAction,
+  children,
+}: AccordionSectionProps) {
+  return (
+    <div
+      className="rounded-lg overflow-hidden"
+      style={{
+        backgroundColor: 'var(--bg-surface)',
+        border: '1px solid var(--border-default)',
+      }}
+    >
+      {/* Header */}
+      <div
+        className="flex items-center justify-between p-4 cursor-pointer select-none"
+        style={{ backgroundColor: 'var(--bg-muted)' }}
+        onClick={onToggle}
+      >
+        <div className="flex items-center gap-3">
+          <div style={{ color: 'var(--accent-500)' }}>{icon}</div>
+          <div>
+            <h3
+              className="text-lg font-bold"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              {title}
+            </h3>
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+              {subtitle}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {headerAction && (
+            <div onClick={(e) => e.stopPropagation()}>{headerAction}</div>
+          )}
+          <div style={{ color: 'var(--text-muted)' }}>
+            {isOpen ? <ChevronDown size={24} /> : <ChevronRight size={24} />}
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      {isOpen && (
+        <div className="p-4">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function RulesetsEditor({ rulesets, companies, primaryCurrency, onChange, onAdd, onRemove }: RulesetsEditorProps) {
+  const [sectionOpen, setSectionOpen] = useState(true);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set(rulesets.map(r => r.id)));
-  const [hasInteracted, setHasInteracted] = useState(false);
   
   const toggleExpanded = (id: string) => {
-    setHasInteracted(true);
     setExpandedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -71,24 +141,54 @@ export function RulesetsEditor({ rulesets, companies, primaryCurrency, onChange 
   }, [rulesets, onChange]);
 
   return (
-    <div className="space-y-4">
-      {rulesets.map((rs, i) => {
-        const isExpanded = expandedIds.has(rs.id);
-        return (
-          <RulesetCard
-            key={rs.id}
-            ruleset={rs}
-            index={i}
-            isExpanded={isExpanded}
-            hasInteracted={hasInteracted}
-            companies={companies}
-            primaryCurrency={primaryCurrency}
-            onToggle={() => toggleExpanded(rs.id)}
-            onUpdate={updateRuleset}
+    <AccordionSection
+      title="Rulesets"
+      subtitle={`${rulesets.length} ruleset${rulesets.length !== 1 ? 's' : ''} configured`}
+      icon={<Layers size={24} />}
+      isOpen={sectionOpen}
+      onToggle={() => setSectionOpen(!sectionOpen)}
+      headerAction={
+        <button onClick={onAdd} className="btn btn-success btn-sm">
+          <Plus size={16} />
+          <span>Add</span>
+        </button>
+      }
+    >
+      {rulesets.length === 0 ? (
+        <div
+          className="p-8 rounded-lg text-center"
+          style={{ backgroundColor: 'var(--bg-muted)' }}
+        >
+          <Layers
+            size={48}
+            className="mx-auto mb-3"
+            style={{ color: 'var(--text-subtle)' }}
           />
-        );
-      })}
-    </div>
+          <p style={{ color: 'var(--text-muted)' }}>
+            No rulesets configured. Add a ruleset to define invoice generation rules.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {rulesets.map((rs, i) => {
+            const isExpanded = expandedIds.has(rs.id);
+            return (
+              <RulesetCard
+                key={rs.id}
+                ruleset={rs}
+                index={i}
+                isExpanded={isExpanded}
+                companies={companies}
+                primaryCurrency={primaryCurrency}
+                onToggle={() => toggleExpanded(rs.id)}
+                onUpdate={updateRuleset}
+                onRemove={() => onRemove(rs.id)}
+              />
+            );
+          })}
+        </div>
+      )}
+    </AccordionSection>
   );
 }
 
@@ -98,14 +198,14 @@ interface RulesetCardProps {
   ruleset: Ruleset;
   index: number;
   isExpanded: boolean;
-  hasInteracted: boolean;
   companies: CompanyDetails[];
   primaryCurrency: Currency;
   onToggle: () => void;
   onUpdate: (index: number, updates: Partial<Ruleset>) => void;
+  onRemove: () => void;
 }
 
-function RulesetCard({ ruleset, index, isExpanded, hasInteracted, companies, primaryCurrency, onToggle, onUpdate }: RulesetCardProps) {
+function RulesetCard({ ruleset, index, isExpanded, companies, primaryCurrency, onToggle, onUpdate, onRemove }: RulesetCardProps) {
   // Refs for all number/text inputs to avoid re-renders on keystroke
   const periodicityCustomRef = useRef<HTMLInputElement>(null);
   const entitlementDayRef = useRef<HTMLInputElement>(null);
@@ -123,26 +223,51 @@ function RulesetCard({ ruleset, index, isExpanded, hasInteracted, companies, pri
   }, [commitField]);
 
   return (
-    <div className="card ruleset-accordion">
-      <button 
-        type="button"
+    <div
+      className="rounded-lg overflow-hidden"
+      style={{
+        backgroundColor: 'var(--bg-surface)',
+        border: '1px solid var(--border-default)',
+      }}
+    >
+      {/* Header */}
+      <div 
         onClick={onToggle}
-        className={`w-full px-6 py-4 flex items-center justify-between cursor-pointer ruleset-header ${isExpanded ? 'expanded' : ''}`}
+        className="flex items-center justify-between p-4 cursor-pointer"
+        style={{ backgroundColor: 'var(--bg-muted)' }}
       >
         <div className="flex items-center gap-3">
-          <Layers size={24} className="ruleset-icon" />
-          <div className="text-left">
-            <h3 className="text-lg font-bold ruleset-title">{ruleset.name}</h3>
-            <p className="text-sm ruleset-subtitle">ID: {ruleset.id}</p>
+          <Layers size={20} style={{ color: 'var(--accent-500)' }} />
+          <div>
+            <span className="badge badge-primary mr-2">{ruleset.id}</span>
+            <span
+              className="font-medium"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              {ruleset.name || 'Unnamed Ruleset'}
+            </span>
           </div>
         </div>
-        <div className={`ruleset-chevron ${isExpanded ? 'expanded' : ''}`}>
-          <ChevronDown size={24} />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            className="btn btn-ghost btn-icon"
+            style={{ color: 'var(--error-500)' }}
+            title="Delete ruleset"
+          >
+            <Trash2 size={18} />
+          </button>
+          {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
         </div>
-      </button>
+      </div>
 
+      {/* Content */}
       {isExpanded && (
-        <div className={`p-6 space-y-6 ${hasInteracted ? 'ruleset-content-inner' : ''}`}>
+        <div className="p-4 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label 

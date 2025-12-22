@@ -9,6 +9,8 @@ export interface CompanyDetails {
   dic?: string;
   isSupplier?: boolean;
   contactId?: string; // Reference to a Contact for this customer
+  emailTemplateId?: string; // Reference to an EmailTemplate for this customer
+  emailConnectorId?: string; // Reference to an EmailConnector (SMTP) for this customer
   bankAccount?: string; // Only for suppliers
 }
 
@@ -17,7 +19,6 @@ export interface Contact {
   name: string;
   email: string;
   phone?: string;
-  emailTemplateId?: string; // Reference to an EmailTemplate
 }
 
 // Email template with HTML content
@@ -26,6 +27,19 @@ export interface EmailTemplate {
   name: string;
   subject: string; // Subject line (can contain placeholders)
   body: string; // HTML content (supports arbitrary HTML + Eta syntax)
+}
+
+// SMTP connector for sending emails
+export interface EmailConnector {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  secure: boolean; // true for SSL/TLS (port 465), false for STARTTLS (port 587)
+  username: string;
+  password: string; // App password for Gmail
+  fromEmail: string;
+  fromName?: string;
 }
 
 export type PeriodicityType = 'monthly' | 'quarterly' | 'yearly' | 'custom_months' | 'custom_days';
@@ -67,6 +81,7 @@ export interface Config {
   companies: CompanyDetails[];
   contacts: Contact[];
   emailTemplates: EmailTemplate[];
+  emailConnectors: EmailConnector[];
   rulesets: Ruleset[];
   primaryCurrency: Currency; // The main currency for invoices and totals
   exchangeRates: {
@@ -86,6 +101,7 @@ export const DEFAULT_CONFIG: Config = {
   contacts: [],
   companies: [],
   emailTemplates: [],
+  emailConnectors: [],
   rulesets: [],
   primaryCurrency: 'CZK',
   exchangeRates: {

@@ -1,17 +1,21 @@
 import { useRef, useMemo } from 'react';
-import { CompanyDetails, Contact } from '../types';
+import { CompanyDetails, Contact, EmailTemplate, EmailConnector } from '../types';
 import {
   Building2,
   CreditCard,
   Plus,
   Trash2,
-  Mail
+  Mail,
+  FileText,
+  Server
 } from 'lucide-react';
 import { Select, findOption } from './Select';
 
 interface CompanyListEditorProps {
   companies: CompanyDetails[];
   contacts?: Contact[];
+  emailTemplates?: EmailTemplate[];
+  emailConnectors?: EmailConnector[];
   onAdd: () => void;
   onUpdate: (id: string, c: CompanyDetails) => void;
   onRemove: (id: string) => void;
@@ -19,7 +23,7 @@ interface CompanyListEditorProps {
   emptyMessage: string;
 }
 
-export function CompanyListEditor({ companies, contacts, onAdd, onUpdate, onRemove, title, emptyMessage }: CompanyListEditorProps) {
+export function CompanyListEditor({ companies, contacts, emailTemplates, emailConnectors, onAdd, onUpdate, onRemove, title, emptyMessage }: CompanyListEditorProps) {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -58,6 +62,8 @@ export function CompanyListEditor({ companies, contacts, onAdd, onUpdate, onRemo
               key={c.id} 
               company={c}
               contacts={contacts}
+              emailTemplates={emailTemplates}
+              emailConnectors={emailConnectors}
               onUpdate={onUpdate}
               onRemove={onRemove}
             />
@@ -71,11 +77,13 @@ export function CompanyListEditor({ companies, contacts, onAdd, onUpdate, onRemo
 interface CompanyCardProps {
   company: CompanyDetails;
   contacts?: Contact[];
+  emailTemplates?: EmailTemplate[];
+  emailConnectors?: EmailConnector[];
   onUpdate: (id: string, c: CompanyDetails) => void;
   onRemove: (id: string) => void;
 }
 
-function CompanyCard({ company, contacts, onUpdate, onRemove }: CompanyCardProps) {
+function CompanyCard({ company, contacts, emailTemplates, emailConnectors, onUpdate, onRemove }: CompanyCardProps) {
   // Use refs for all inputs - completely bypasses React rendering on keystroke
   const nameRef = useRef<HTMLInputElement>(null);
   const streetRef = useRef<HTMLInputElement>(null);
@@ -86,11 +94,23 @@ function CompanyCard({ company, contacts, onUpdate, onRemove }: CompanyCardProps
   const dicRef = useRef<HTMLInputElement>(null);
   const bankRef = useRef<HTMLInputElement>(null);
   const contactIdRef = useRef<string | undefined>(company.contactId);
+  const emailTemplateIdRef = useRef<string | undefined>(company.emailTemplateId);
+  const emailConnectorIdRef = useRef<string | undefined>(company.emailConnectorId);
   
   const contactOptions = useMemo(() => {
     if (!contacts || company.isSupplier) return [];
     return contacts.map(c => ({ value: c.id, label: `${c.name} (${c.email})` }));
   }, [contacts, company.isSupplier]);
+
+  const templateOptions = useMemo(() => {
+    if (!emailTemplates || company.isSupplier) return [];
+    return emailTemplates.map(t => ({ value: t.id, label: t.name || t.id }));
+  }, [emailTemplates, company.isSupplier]);
+
+  const connectorOptions = useMemo(() => {
+    if (!emailConnectors || company.isSupplier) return [];
+    return emailConnectors.map(c => ({ value: c.id, label: c.name || c.id }));
+  }, [emailConnectors, company.isSupplier]);
 
   // Commit all current values to parent
   const commitChanges = () => {
@@ -105,11 +125,23 @@ function CompanyCard({ company, contacts, onUpdate, onRemove }: CompanyCardProps
       dic: dicRef.current?.value || undefined,
       bankAccount: bankRef.current?.value || undefined,
       contactId: contactIdRef.current,
+      emailTemplateId: emailTemplateIdRef.current,
+      emailConnectorId: emailConnectorIdRef.current,
     });
   };
 
   const handleContactChange = (opt: { value: string } | null) => {
     contactIdRef.current = opt?.value || undefined;
+    commitChanges();
+  };
+
+  const handleTemplateChange = (opt: { value: string } | null) => {
+    emailTemplateIdRef.current = opt?.value || undefined;
+    commitChanges();
+  };
+
+  const handleConnectorChange = (opt: { value: string } | null) => {
+    emailConnectorIdRef.current = opt?.value || undefined;
     commitChanges();
   };
 
@@ -256,25 +288,70 @@ function CompanyCard({ company, contacts, onUpdate, onRemove }: CompanyCardProps
       )}
 
       {!company.isSupplier && contacts && (
-        <div>
-          <label 
-            className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide mb-1"
+        <div
+          className="pt-4 space-y-4"
+          style={{ borderTop: '1px solid var(--border-default)' }}
+        >
+          <div
+            className="text-xs font-semibold uppercase tracking-wide flex items-center gap-2"
             style={{ color: 'var(--text-muted)' }}
           >
             <Mail size={14} />
-            Contact Person
-          </label>
-          <Select
-            value={findOption(contactOptions, company.contactId)}
-            onChange={handleContactChange}
-            options={contactOptions}
-            placeholder="No contact assigned"
-            isClearable
-            isSearchable={false}
-          />
-          <p className="text-xs mt-1" style={{ color: 'var(--text-subtle)' }}>
-            Assigned contact for automated emails
-          </p>
+            Email Settings
+          </div>
+
+          <div>
+            <label 
+              className="text-xs font-semibold uppercase tracking-wide mb-1 block"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              Contact Person
+            </label>
+            <Select
+              value={findOption(contactOptions, company.contactId)}
+              onChange={handleContactChange}
+              options={contactOptions}
+              placeholder="No contact assigned"
+              isClearable
+              isSearchable={false}
+            />
+          </div>
+
+          <div>
+            <label 
+              className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide mb-1"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <FileText size={14} />
+              Email Template
+            </label>
+            <Select
+              value={findOption(templateOptions, company.emailTemplateId)}
+              onChange={handleTemplateChange}
+              options={templateOptions}
+              placeholder="No template assigned"
+              isClearable
+              isSearchable={false}
+            />
+          </div>
+
+          <div>
+            <label 
+              className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide mb-1"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <Server size={14} />
+              SMTP Connector
+            </label>
+            <Select
+              value={findOption(connectorOptions, company.emailConnectorId)}
+              onChange={handleConnectorChange}
+              options={connectorOptions}
+              placeholder="No connector assigned"
+              isClearable
+              isSearchable={false}
+            />
+          </div>
         </div>
       )}
     </div>

@@ -43,6 +43,11 @@ export async function loadConfig(): Promise<Config> {
           }));
       }
 
+      // Ensure emailConnectors array exists
+      if (!loaded.emailConnectors) {
+        loaded.emailConnectors = [];
+      }
+
       // Merge with default to ensure all fields exist
       return { ...DEFAULT_CONFIG, ...loaded, exchangeRates: { ...DEFAULT_CONFIG.exchangeRates, ...loaded.exchangeRates } };
     }

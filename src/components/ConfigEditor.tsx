@@ -1,6 +1,7 @@
 import { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
-import { Config, CompanyDetails, Contact, EmailTemplate } from '../types';
+import { Config, CompanyDetails, Contact, EmailTemplate, EmailConnector, Ruleset } from '../types';
 import { saveConfig } from '../utils/config';
+import { loadSmtpCredentials, saveSmtpCredentials, SmtpCredentials } from '../utils/smtpCredentials';
 import { useConfirm } from '../contexts/ConfirmModalContext';
 import { usePrompt } from '../contexts/PromptModalContext';
 import { APIKeysEditorRef } from './APIKeysEditor';
@@ -79,17 +80,51 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
     wasVisibleRef.current = isVisible;
     
     if (isVisible && !wasVisible) {
-      setLocalConfig(JSON.parse(JSON.stringify(config)));
+      // Load config and merge SMTP credentials
+      const loadAndMerge = async () => {
+        const credentials = await loadSmtpCredentials();
+        
+        // Clone config and merge passwords into connectors
+        const configClone = JSON.parse(JSON.stringify(config)) as Config;
+        if (configClone.emailConnectors) {
+          configClone.emailConnectors = configClone.emailConnectors.map(c => ({
+            ...c,
+            password: credentials[c.id] || c.password || ''
+          }));
+        }
+        setLocalConfig(configClone);
+      };
+      loadAndMerge();
     }
   }, [isVisible, config]);
 
   const handleSave = async () => {
     try {
-      await saveConfig(localConfig);
+      // Extract SMTP passwords and save them encrypted separately
+      const newCredentials: SmtpCredentials = {};
+      const connectorsWithoutPasswords = (localConfig.emailConnectors || []).map(c => {
+        if (c.password) {
+          newCredentials[c.id] = c.password;
+        }
+        // Return connector without password for main config
+        const { password: _, ...connectorWithoutPassword } = c;
+        return { ...connectorWithoutPassword, password: '' };
+      });
+      
+      // Save SMTP credentials encrypted
+      await saveSmtpCredentials(newCredentials);
+      
+      // Save config without passwords
+      const configToSave = {
+        ...localConfig,
+        emailConnectors: connectorsWithoutPasswords
+      };
+      await saveConfig(configToSave);
+      
       // Save API keys via the editor's ref
       await apiKeysEditorRef.current?.save();
       toast.success('Settings saved successfully');
-      onSave(localConfig);
+      onSave(localConfig); // Pass full config with passwords to parent for runtime use
     } catch (e) {
       toast.error('Failed to save settings: ' + e);
     }
@@ -268,6 +303,118 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
     }
   };
 
+  // Email connector (SMTP) management
+  const addEmailConnector = async () => {
+    const id = await prompt({
+      title: 'Add New SMTP Connector',
+      message: 'Enter a unique ID for this connector (e.g., "gmail-main"):',
+      placeholder: 'smtp-1',
+      confirmText: 'Create',
+      cancelText: 'Cancel',
+    });
+    
+    if (id) {
+      // Validate the ID
+      if ((localConfig.emailConnectors || []).some(c => c.id === id)) {
+        toast.error('This ID already exists');
+        return;
+      }
+      if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+        toast.error('ID can only contain letters, numbers, hyphens and underscores');
+        return;
+      }
+      
+      const newConnector: EmailConnector = {
+        id,
+        name: '',
+        host: 'smtp.gmail.com',
+        port: 587,
+        secure: false,
+        username: '',
+        password: '',
+        fromEmail: '',
+      };
+      setLocalConfig({...localConfig, emailConnectors: [...(localConfig.emailConnectors || []), newConnector]});
+    }
+  };
+
+  const updateEmailConnector = (id: string, connector: EmailConnector) => {
+    setLocalConfig({
+      ...localConfig,
+      emailConnectors: (localConfig.emailConnectors || []).map(c => c.id === id ? connector : c)
+    });
+  };
+
+  const removeEmailConnector = async (id: string) => {
+    const connector = (localConfig.emailConnectors || []).find(c => c.id === id);
+    const confirmed = await confirm({
+      title: 'Delete SMTP Connector',
+      message: `Are you sure you want to delete "${connector?.name || id}"? This action cannot be undone.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'danger'
+    });
+    
+    if (confirmed) {
+      setLocalConfig({
+        ...localConfig,
+        emailConnectors: (localConfig.emailConnectors || []).filter(c => c.id !== id)
+      });
+    }
+  };
+
+  // Ruleset management
+  const addRuleset = async () => {
+    const id = await prompt({
+      title: 'Add New Ruleset',
+      message: 'Enter a unique ID for this ruleset (e.g., "main-client"):',
+      placeholder: 'ruleset-1',
+      confirmText: 'Create',
+      cancelText: 'Cancel',
+    });
+    
+    if (id) {
+      // Validate the ID
+      if ((localConfig.rulesets || []).some(r => r.id === id)) {
+        toast.error('This ID already exists');
+        return;
+      }
+      if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+        toast.error('ID can only contain letters, numbers, hyphens and underscores');
+        return;
+      }
+      
+      const newRuleset: Ruleset = {
+        id,
+        name: '',
+        periodicity: 'monthly',
+        entitlementDay: 5,
+        salaryRules: [],
+        rules: [],
+        descriptions: [],
+      };
+      setLocalConfig({...localConfig, rulesets: [...(localConfig.rulesets || []), newRuleset]});
+    }
+  };
+
+  const removeRuleset = async (id: string) => {
+    const ruleset = (localConfig.rulesets || []).find(r => r.id === id);
+    const confirmed = await confirm({
+      title: 'Delete Ruleset',
+      message: `Are you sure you want to delete "${ruleset?.name || id}"? This action cannot be undone.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'danger'
+    });
+    
+    if (confirmed) {
+      setLocalConfig({
+        ...localConfig,
+        rulesets: (localConfig.rulesets || []).filter(r => r.id !== id)
+      });
+    }
+  };
+
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8">
       {/* Tab Navigation */}
@@ -314,6 +461,8 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
           <CompanyListEditor 
             companies={localConfig.companies.filter(c => !c.isSupplier)} 
             contacts={localConfig.contacts || []}
+            emailTemplates={localConfig.emailTemplates || []}
+            emailConnectors={localConfig.emailConnectors || []}
             onAdd={() => addCompany(false)}
             onUpdate={updateCompany}
             onRemove={removeCompany}
@@ -325,7 +474,6 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
         {activeTab === 'contacts' && (
           <ContactsEditor 
             contacts={localConfig.contacts || []}
-            emailTemplates={localConfig.emailTemplates || []}
             onAdd={addContact}
             onUpdate={updateContact}
             onRemove={removeContact}
@@ -335,9 +483,13 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
         {activeTab === 'emailTemplates' && (
           <EmailTemplatesEditor
             templates={localConfig.emailTemplates || []}
-            onAdd={addEmailTemplate}
-            onUpdate={updateEmailTemplate}
-            onRemove={removeEmailTemplate}
+            connectors={localConfig.emailConnectors || []}
+            onAddTemplate={addEmailTemplate}
+            onUpdateTemplate={updateEmailTemplate}
+            onRemoveTemplate={removeEmailTemplate}
+            onAddConnector={addEmailConnector}
+            onUpdateConnector={updateEmailConnector}
+            onRemoveConnector={removeEmailConnector}
           />
         )}
 
@@ -347,6 +499,8 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
             companies={localConfig.companies}
             primaryCurrency={localConfig.primaryCurrency}
             onChange={rulesets => setLocalConfig({...localConfig, rulesets})}
+            onAdd={addRuleset}
+            onRemove={removeRuleset}
           />
         )}
       </div>
