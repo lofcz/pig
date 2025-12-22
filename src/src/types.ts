@@ -75,9 +75,26 @@ export type ThemePreference = 'light' | 'dark' | 'system';
 
 export type Currency = 'CZK' | 'EUR' | 'USD';
 
+/** Project folder structure configuration */
+export interface ProjectStructure {
+  /** Name of the invoices folder (default: "invoices") */
+  invoicesFolder: string;
+  /** Path to pending reimbursements folder from root (default: "reimburse/pending") */
+  reimbursePendingFolder: string;
+  /** Path to completed reimbursements folder from root (default: "reimburse/done") */
+  reimburseDoneFolder: string;
+}
+
+export const DEFAULT_PROJECT_STRUCTURE: ProjectStructure = {
+  invoicesFolder: 'invoices',
+  reimbursePendingFolder: 'reimburse/pending',
+  reimburseDoneFolder: 'reimburse/done',
+};
+
 export interface Config {
   rootPath: string;
-  sofficePath?: string; // Path to LibreOffice soffice executable
+  projectName?: string; // User-friendly project name
+  projectStructure?: ProjectStructure; // Custom folder naming
   companies: CompanyDetails[];
   contacts: Contact[];
   emailTemplates: EmailTemplate[];
@@ -89,15 +106,19 @@ export interface Config {
     USD: number;
     CZK: number;
   };
-  theme?: ThemePreference;
   // Deprecated - migrated to CompanyDetails.bankAccount (for suppliers)
   bankAccount?: string;
   // Deprecated - migrated to Ruleset.maxInvoiceValue
   maxInvoiceValue?: number;
+  // Deprecated - moved to global settings
+  sofficePath?: string;
+  theme?: ThemePreference;
 }
 
 export const DEFAULT_CONFIG: Config = {
   rootPath: "",
+  projectName: "",
+  projectStructure: DEFAULT_PROJECT_STRUCTURE,
   contacts: [],
   companies: [],
   emailTemplates: [],
@@ -109,5 +130,4 @@ export const DEFAULT_CONFIG: Config = {
     USD: 23,
     CZK: 1
   },
-  theme: 'system'
 };

@@ -1,4 +1,5 @@
-import { readTextFile, writeTextFile, exists } from '@tauri-apps/plugin-fs';
+import { readTextFile, writeTextFile, exists, mkdir } from '@tauri-apps/plugin-fs';
+import { join } from '@tauri-apps/api/path';
 
 // Provider IDs
 export type ProviderId = 'openai' | 'anthropic' | 'gemini' | 'ollama';
@@ -21,6 +22,7 @@ export interface APIKeysConfig {
   providerOrder?: ProviderId[]; // Order of providers (top = first to try)
 }
 
+const PIG_FOLDER = '.pig';
 const API_KEYS_FILE = 'api_keys.enc';
 
 // Note: This is NOT cryptographically secure - it's just obfuscation
@@ -63,10 +65,25 @@ export function decryptAPIKeys(encrypted: string): APIKeysConfig {
   }
 }
 
-export async function loadAPIKeys(): Promise<APIKeysConfig> {
+/**
+ * Get the path to the API keys file
+ */
+async function getAPIKeysPath(rootPath: string): Promise<string> {
+  return await join(rootPath, PIG_FOLDER, API_KEYS_FILE);
+}
+
+/**
+ * Load API keys from the project's .pig folder
+ */
+export async function loadAPIKeys(rootPath: string): Promise<APIKeysConfig> {
+  if (!rootPath) {
+    return {};
+  }
+  
   try {
-    if (await exists(API_KEYS_FILE)) {
-      const encrypted = await readTextFile(API_KEYS_FILE);
+    const keysPath = await getAPIKeysPath(rootPath);
+    if (await exists(keysPath)) {
+      const encrypted = await readTextFile(keysPath);
       return decryptAPIKeys(encrypted);
     }
   } catch (e) {
@@ -75,10 +92,24 @@ export async function loadAPIKeys(): Promise<APIKeysConfig> {
   return {};
 }
 
-export async function saveAPIKeys(keys: APIKeysConfig): Promise<void> {
+/**
+ * Save API keys to the project's .pig folder
+ */
+export async function saveAPIKeys(rootPath: string, keys: APIKeysConfig): Promise<void> {
+  if (!rootPath) {
+    throw new Error("Cannot save API keys: rootPath is not set");
+  }
+  
   try {
+    // Ensure .pig folder exists
+    const pigPath = await join(rootPath, PIG_FOLDER);
+    if (!await exists(pigPath)) {
+      await mkdir(pigPath, { recursive: true });
+    }
+    
+    const keysPath = await getAPIKeysPath(rootPath);
     const encrypted = encryptAPIKeys(keys);
-    await writeTextFile(API_KEYS_FILE, encrypted);
+    await writeTextFile(keysPath, encrypted);
   } catch (e) {
     console.error("Failed to save API keys:", e);
     throw e;
@@ -147,4 +178,3 @@ export const API_PROVIDERS = {
     modelPlaceholder: 'llama3, mistral, qwen...',
   }
 } as const;
-

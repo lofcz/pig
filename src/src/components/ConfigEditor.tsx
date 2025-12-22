@@ -82,7 +82,7 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
     if (isVisible && !wasVisible) {
       // Load config and merge SMTP credentials
       const loadAndMerge = async () => {
-        const credentials = await loadSmtpCredentials();
+        const credentials = await loadSmtpCredentials(config.rootPath);
         
         // Clone config and merge passwords into connectors
         const configClone = JSON.parse(JSON.stringify(config)) as Config;
@@ -112,7 +112,7 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
       });
       
       // Save SMTP credentials encrypted
-      await saveSmtpCredentials(newCredentials);
+      await saveSmtpCredentials(localConfig.rootPath, newCredentials);
       
       // Save config without passwords
       const configToSave = {

@@ -270,8 +270,8 @@ export class AIService {
     return this._config.model;
   }
   
-  async init(): Promise<void> {
-    this.apiKeys = await loadAPIKeys();
+  async init(rootPath: string): Promise<void> {
+    this.apiKeys = await loadAPIKeys(rootPath);
   }
   
   /**
@@ -807,14 +807,14 @@ export function createAIService(config: AIConfig): AIService {
   return new AIService(config);
 }
 
-export async function createInitializedAIService(config: AIConfig): Promise<AIService> {
+export async function createInitializedAIService(config: AIConfig, rootPath: string): Promise<AIService> {
   const service = new AIService(config);
-  await service.init();
+  await service.init(rootPath);
   return service;
 }
 
-export async function getAvailableAIService(): Promise<AIService | null> {
-  const apiKeys = await loadAPIKeys();
+export async function getAvailableAIService(rootPath: string): Promise<AIService | null> {
+  const apiKeys = await loadAPIKeys(rootPath);
   
   const providers: AIProvider[] = ['openai', 'anthropic', 'gemini', 'ollama'];
   

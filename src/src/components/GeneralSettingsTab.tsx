@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Config, Currency } from '../types';
 import { open } from '@tauri-apps/plugin-dialog';
 import { exists } from '@tauri-apps/plugin-fs';
-import { useTheme, Theme } from '../contexts/ThemeContext';
+import { GlobalSettings, loadGlobalSettings, saveGlobalSettings, autoDetectSoffice, ThemePreference } from '../utils/globalSettings';
 import { APIKeysEditor, APIKeysEditorRef } from './APIKeysEditor';
 import { toast } from 'sonner';
 import {
@@ -15,7 +15,9 @@ import {
   Monitor,
   Palette,
   Wand2,
-  Coins
+  Coins,
+  Globe,
+  Folder
 } from 'lucide-react';
 
 const CURRENCY_OPTIONS: { value: Currency; label: string; symbol: string }[] = [
@@ -35,187 +37,229 @@ interface GeneralSettingsTabProps {
 }
 
 export function GeneralSettingsTab({ config, onChange, apiKeysRef }: GeneralSettingsTabProps) {
-  const { theme, setTheme } = useTheme();
+  const [globalSettings, setGlobalSettings] = useState<GlobalSettings>(loadGlobalSettings);
 
-  const themeOptions: { value: Theme; icon: React.ReactNode; label: string }[] = [
+  const updateGlobalSettings = (updates: Partial<GlobalSettings>) => {
+    const newSettings = { ...globalSettings, ...updates };
+    setGlobalSettings(newSettings);
+    saveGlobalSettings(newSettings);
+    
+    // Apply theme immediately
+    if (updates.theme !== undefined) {
+      applyTheme(updates.theme);
+    }
+  };
+
+  const applyTheme = (theme: ThemePreference) => {
+    const root = document.documentElement;
+    if (theme === 'system') {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      root.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+    } else {
+      root.setAttribute('data-theme', theme);
+    }
+  };
+
+  const themeOptions: { value: ThemePreference; icon: React.ReactNode; label: string }[] = [
     { value: 'light', icon: <Sun size={18} />, label: 'Light' },
     { value: 'dark', icon: <Moon size={18} />, label: 'Dark' },
     { value: 'system', icon: <Monitor size={18} />, label: 'System' },
   ];
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-      {/* Left Column - App Configuration */}
-      <div className="space-y-6">
-        {/* Appearance Section */}
-        <SettingsSection title="Appearance" icon={Palette}>
-          {/* Desktop: Toggle buttons */}
-          <div 
-            className="hidden sm:inline-flex gap-1 p-1 rounded-xl"
-            style={{ backgroundColor: 'var(--bg-surface)' }}
-          >
-            {themeOptions.map((option) => (
-              <button
-                key={option.value}
-                onClick={() => setTheme(option.value)}
-                className={`
-                  flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all
-                  ${theme === option.value 
-                    ? 'shadow-sm' 
-                    : 'hover:bg-black/5 dark:hover:bg-white/5'
-                  }
-                `}
-                style={{ 
-                  backgroundColor: theme === option.value ? 'var(--accent-500)' : 'transparent',
-                  color: theme === option.value ? 'white' : 'var(--text-muted)'
-                }}
-              >
-                {option.icon}
-                <span>{option.label}</span>
-              </button>
-            ))}
-          </div>
-          {/* Mobile: Radio buttons */}
-          <div className="sm:hidden space-y-2">
-            {themeOptions.map((option) => (
-              <label
-                key={option.value}
-                className="flex items-center gap-3 cursor-pointer"
-              >
-                <input
-                  type="radio"
-                  name="theme"
-                  value={option.value}
-                  checked={theme === option.value}
-                  onChange={() => setTheme(option.value)}
-                  className="w-4 h-4 accent-[var(--accent-500)]"
-                />
-                <span 
-                  className="flex items-center gap-2 text-sm"
-                  style={{ color: theme === option.value ? 'var(--text-primary)' : 'var(--text-muted)' }}
-                >
-                  {option.icon}
-                  <span>{option.label}</span>
-                </span>
-              </label>
-            ))}
-          </div>
-        </SettingsSection>
-
-        {/* Paths Section */}
-        <SettingsSection title="Paths" icon={FolderOpen}>
-          <div className="space-y-4">
-            <PathInput 
-              label="Root Directory"
-              value={config.rootPath}
-              onChange={val => onChange({...config, rootPath: val})}
-              isDirectory
-            />
-
-            <SofficePathInput
-              value={config.sofficePath || ''}
-              onChange={val => onChange({...config, sofficePath: val || undefined})}
-            />
-          </div>
-        </SettingsSection>
-
-        {/* Primary Currency Section */}
-        <SettingsSection title="Currency" icon={Coins}>
-          <div>
-            <label 
-              className="text-xs font-medium mb-1.5 block"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              Primary Currency
-            </label>
+    <div className="space-y-8">
+      {/* Global Settings Section */}
+      <div>
+        <div className="flex items-center gap-2 mb-4 pb-2 border-b" style={{ borderColor: 'var(--border-default)' }}>
+          <Globe size={18} style={{ color: 'var(--accent-500)' }} />
+          <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+            Global Settings
+          </h2>
+          <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--bg-muted)', color: 'var(--text-subtle)' }}>
+            App-wide
+          </span>
+        </div>
+        
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          {/* Appearance Section */}
+          <SettingsSection title="Appearance" icon={Palette}>
             {/* Desktop: Toggle buttons */}
             <div 
               className="hidden sm:inline-flex gap-1 p-1 rounded-xl"
               style={{ backgroundColor: 'var(--bg-surface)' }}
             >
-              {CURRENCY_OPTIONS.map((option) => (
+              {themeOptions.map((option) => (
                 <button
                   key={option.value}
-                  onClick={() => onChange({...config, primaryCurrency: option.value})}
+                  onClick={() => updateGlobalSettings({ theme: option.value })}
                   className={`
                     flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all
-                    ${config.primaryCurrency === option.value 
+                    ${globalSettings.theme === option.value 
                       ? 'shadow-sm' 
                       : 'hover:bg-black/5 dark:hover:bg-white/5'
                     }
                   `}
                   style={{ 
-                    backgroundColor: config.primaryCurrency === option.value ? 'var(--accent-500)' : 'transparent',
-                    color: config.primaryCurrency === option.value ? 'white' : 'var(--text-muted)'
+                    backgroundColor: globalSettings.theme === option.value ? 'var(--accent-500)' : 'transparent',
+                    color: globalSettings.theme === option.value ? 'white' : 'var(--text-muted)'
                   }}
                 >
-                  <span className="font-mono">{option.symbol}</span>
-                  <span>{option.value}</span>
+                  {option.icon}
+                  <span>{option.label}</span>
                 </button>
               ))}
             </div>
             {/* Mobile: Radio buttons */}
             <div className="sm:hidden space-y-2">
-              {CURRENCY_OPTIONS.map((option) => (
+              {themeOptions.map((option) => (
                 <label
                   key={option.value}
                   className="flex items-center gap-3 cursor-pointer"
                 >
                   <input
                     type="radio"
-                    name="currency"
+                    name="theme"
                     value={option.value}
-                    checked={config.primaryCurrency === option.value}
-                    onChange={() => onChange({...config, primaryCurrency: option.value})}
+                    checked={globalSettings.theme === option.value}
+                    onChange={() => updateGlobalSettings({ theme: option.value })}
                     className="w-4 h-4 accent-[var(--accent-500)]"
                   />
                   <span 
                     className="flex items-center gap-2 text-sm"
-                    style={{ color: config.primaryCurrency === option.value ? 'var(--text-primary)' : 'var(--text-muted)' }}
+                    style={{ color: globalSettings.theme === option.value ? 'var(--text-primary)' : 'var(--text-muted)' }}
                   >
-                    <span className="font-mono">{option.symbol}</span>
-                    <span>{option.value}</span>
+                    {option.icon}
+                    <span>{option.label}</span>
                   </span>
                 </label>
               ))}
             </div>
-            <p className="text-xs mt-2" style={{ color: 'var(--text-subtle)' }}>
-              All invoice totals and values will be displayed in this currency.
-            </p>
-          </div>
-        </SettingsSection>
+          </SettingsSection>
 
-        {/* Exchange Rates Section */}
-        <SettingsSection title="Exchange Rates" icon={Percent}>
-          <div className="grid grid-cols-2 gap-4">
-            {CURRENCY_OPTIONS.filter(c => c.value !== config.primaryCurrency).map(currency => (
-              <div key={currency.value}>
+          {/* LibreOffice Path Section */}
+          <SettingsSection title="LibreOffice" icon={FolderOpen}>
+            <SofficePathInput
+              value={globalSettings.sofficePath || ''}
+              onChange={val => updateGlobalSettings({ sofficePath: val || undefined })}
+            />
+          </SettingsSection>
+        </div>
+      </div>
+
+      {/* Project Settings Section */}
+      <div>
+        <div className="flex items-center gap-2 mb-4 pb-2 border-b" style={{ borderColor: 'var(--border-default)' }}>
+          <Folder size={18} style={{ color: 'var(--accent-500)' }} />
+          <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+            Project Settings
+          </h2>
+          <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--bg-muted)', color: 'var(--text-subtle)' }}>
+            {config.projectName || 'Current project'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          {/* Left Column - Currency & Rates */}
+          <div className="space-y-6">
+            {/* Primary Currency Section */}
+            <SettingsSection title="Currency" icon={Coins}>
+              <div>
                 <label 
                   className="text-xs font-medium mb-1.5 block"
                   style={{ color: 'var(--text-muted)' }}
                 >
-                  {currency.value} → {config.primaryCurrency}
+                  Primary Currency
                 </label>
-                <input
-                  type="number"
-                  value={config.exchangeRates[currency.value]}
-                  onChange={e => onChange({
-                    ...config, 
-                    exchangeRates: {...config.exchangeRates, [currency.value]: Number(e.target.value)}
-                  })}
-                />
+                {/* Desktop: Toggle buttons */}
+                <div 
+                  className="hidden sm:inline-flex gap-1 p-1 rounded-xl"
+                  style={{ backgroundColor: 'var(--bg-surface)' }}
+                >
+                  {CURRENCY_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      onClick={() => onChange({...config, primaryCurrency: option.value})}
+                      className={`
+                        flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all
+                        ${config.primaryCurrency === option.value 
+                          ? 'shadow-sm' 
+                          : 'hover:bg-black/5 dark:hover:bg-white/5'
+                        }
+                      `}
+                      style={{ 
+                        backgroundColor: config.primaryCurrency === option.value ? 'var(--accent-500)' : 'transparent',
+                        color: config.primaryCurrency === option.value ? 'white' : 'var(--text-muted)'
+                      }}
+                    >
+                      <span className="font-mono">{option.symbol}</span>
+                      <span>{option.value}</span>
+                    </button>
+                  ))}
+                </div>
+                {/* Mobile: Radio buttons */}
+                <div className="sm:hidden space-y-2">
+                  {CURRENCY_OPTIONS.map((option) => (
+                    <label
+                      key={option.value}
+                      className="flex items-center gap-3 cursor-pointer"
+                    >
+                      <input
+                        type="radio"
+                        name="currency"
+                        value={option.value}
+                        checked={config.primaryCurrency === option.value}
+                        onChange={() => onChange({...config, primaryCurrency: option.value})}
+                        className="w-4 h-4 accent-[var(--accent-500)]"
+                      />
+                      <span 
+                        className="flex items-center gap-2 text-sm"
+                        style={{ color: config.primaryCurrency === option.value ? 'var(--text-primary)' : 'var(--text-muted)' }}
+                      >
+                        <span className="font-mono">{option.symbol}</span>
+                        <span>{option.value}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs mt-2" style={{ color: 'var(--text-subtle)' }}>
+                  All invoice totals and values will be displayed in this currency.
+                </p>
               </div>
-            ))}
-          </div>
-          <p className="text-xs mt-3" style={{ color: 'var(--text-subtle)' }}>
-            Exchange rates for converting other currencies to {config.primaryCurrency}.
-          </p>
-        </SettingsSection>
-      </div>
+            </SettingsSection>
 
-      {/* Right Column - API Keys */}
-      <div>
-        <APIKeysEditor ref={apiKeysRef} />
+            {/* Exchange Rates Section */}
+            <SettingsSection title="Exchange Rates" icon={Percent}>
+              <div className="grid grid-cols-2 gap-4">
+                {CURRENCY_OPTIONS.filter(c => c.value !== config.primaryCurrency).map(currency => (
+                  <div key={currency.value}>
+                    <label 
+                      className="text-xs font-medium mb-1.5 block"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      {currency.value} → {config.primaryCurrency}
+                    </label>
+                    <input
+                      type="number"
+                      value={config.exchangeRates[currency.value]}
+                      onChange={e => onChange({
+                        ...config, 
+                        exchangeRates: {...config.exchangeRates, [currency.value]: Number(e.target.value)}
+                      })}
+                    />
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs mt-3" style={{ color: 'var(--text-subtle)' }}>
+                Exchange rates for converting other currencies to {config.primaryCurrency}.
+              </p>
+            </SettingsSection>
+          </div>
+
+          {/* Right Column - API Keys */}
+          <div>
+            <APIKeysEditor ref={apiKeysRef} rootPath={config.rootPath} />
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -249,75 +293,10 @@ function SettingsSection({ title, icon: Icon, children }: SettingsSectionProps) 
   );
 }
 
-interface PathInputProps {
-  value: string;
-  onChange: (val: string) => void;
-  isDirectory?: boolean;
-  label: string;
-}
-
-function PathInput({ value, onChange, isDirectory = false, label }: PathInputProps) {
-  const [isValid, setIsValid] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    if (!value) { setIsValid(null); return; }
-    exists(value).then(setIsValid).catch(() => setIsValid(false));
-  }, [value]);
-
-  const handleBrowse = async () => {
-    const selected = await open({
-      directory: isDirectory,
-      multiple: false,
-      defaultPath: value || undefined,
-      filters: isDirectory ? undefined : [{ name: 'ODT Template', extensions: ['odt'] }]
-    });
-    if (selected && typeof selected === 'string') {
-      onChange(selected);
-    }
-  };
-
-  return (
-    <div>
-      <label 
-        className="text-xs font-medium mb-1.5 block"
-        style={{ color: 'var(--text-muted)' }}
-      >
-        {label}
-      </label>
-      <div className="flex gap-2 items-center">
-        <div className="relative flex-1">
-          <input
-            type="text"
-            value={value}
-            onChange={e => onChange(e.target.value)}
-            className={`pr-10 ${isValid === true ? 'validation-valid' : isValid === false ? 'validation-invalid' : ''}`}
-          />
-          <div className="absolute right-3 top-1/2 -translate-y-1/2">
-            {isValid === true && <Check size={18} className="validation-valid-icon" />}
-            {isValid === false && <AlertTriangle size={18} className="validation-invalid-icon" />}
-          </div>
-        </div>
-        <button onClick={handleBrowse} className="btn btn-secondary btn-icon">
-          <FolderOpen size={18} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
 interface SofficePathInputProps {
   value: string;
   onChange: (val: string) => void;
 }
-
-const SOFFICE_COMMON_PATHS = [
-  'C:\\Program Files\\LibreOffice\\program\\soffice.exe',
-  'C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe',
-  'C:\\Program Files\\LibreOffice 7\\program\\soffice.exe',
-  'C:\\Program Files\\LibreOffice 24\\program\\soffice.exe',
-  'C:\\Program Files\\OpenOffice\\program\\soffice.exe',
-  'C:\\Program Files (x86)\\OpenOffice\\program\\soffice.exe',
-];
 
 function SofficePathInput({ value, onChange }: SofficePathInputProps) {
   const [isValid, setIsValid] = useState<boolean | null>(null);
@@ -342,16 +321,14 @@ function SofficePathInput({ value, onChange }: SofficePathInputProps) {
   const handleAutoDetect = async () => {
     setIsDetecting(true);
     try {
-      for (const path of SOFFICE_COMMON_PATHS) {
-        if (await exists(path)) {
-          onChange(path);
-          toast.success('LibreOffice found!');
-          setIsDetecting(false);
-          return;
-        }
+      const detected = await autoDetectSoffice();
+      if (detected) {
+        onChange(detected);
+        toast.success('LibreOffice found!');
+      } else {
+        toast.error('LibreOffice not found in common locations. Please browse manually.');
       }
-      toast.error('LibreOffice not found in common locations. Please browse manually.');
-    } catch (e) {
+    } catch {
       toast.error('Auto-detection failed');
     }
     setIsDetecting(false);

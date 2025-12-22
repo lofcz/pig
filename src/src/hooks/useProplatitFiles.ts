@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { getProplatitFiles, FileEntry } from '../utils/logic';
-import { Config, Currency } from '../types';
+import { Config, Currency, ProjectStructure, DEFAULT_PROJECT_STRUCTURE } from '../types';
 
 export interface ProplatitItem {
   file: FileEntry;
@@ -14,18 +14,24 @@ interface UseProplatitFilesOptions {
   rootPath: string;
   primaryCurrency: Currency;
   exchangeRates: Config['exchangeRates'];
+  projectStructure?: ProjectStructure;
 }
 
 /**
  * Hook for managing proplatit (extra) files state.
  */
-export function useProplatitFiles({ rootPath, primaryCurrency, exchangeRates }: UseProplatitFilesOptions) {
+export function useProplatitFiles({ 
+  rootPath, 
+  primaryCurrency, 
+  exchangeRates,
+  projectStructure = DEFAULT_PROJECT_STRUCTURE,
+}: UseProplatitFilesOptions) {
   const [files, setFiles] = useState<ProplatitItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadFiles = useCallback(async () => {
     setLoading(true);
-    const loadedFiles = await getProplatitFiles(rootPath);
+    const loadedFiles = await getProplatitFiles(rootPath, projectStructure);
     setFiles(loadedFiles.map(f => ({
       file: f,
       value: 0,
@@ -34,7 +40,7 @@ export function useProplatitFiles({ rootPath, primaryCurrency, exchangeRates }: 
       assignedDraftId: undefined
     })));
     setLoading(false);
-  }, [rootPath, primaryCurrency]);
+  }, [rootPath, primaryCurrency, projectStructure]);
 
   useEffect(() => {
     loadFiles();

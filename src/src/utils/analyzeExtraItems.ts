@@ -189,17 +189,18 @@ async function analyzeFile(
 export async function analyzeExtraItems(
   items: Array<{ filePath: string; fileName: string; index: number }>,
   options: {
+    rootPath: string;
     primaryCurrency: Currency;
     concurrency?: number;
     onProgress?: (progress: AnalysisProgress) => void;
     onItemComplete?: (index: number, result: AnalysisResult) => void;
   }
 ): Promise<Map<number, AnalysisResult>> {
-  const { primaryCurrency, concurrency = 8, onProgress, onItemComplete } = options;
+  const { rootPath, primaryCurrency, concurrency = 8, onProgress, onItemComplete } = options;
   const results = new Map<number, AnalysisResult>();
 
   // Load API keys and find available provider
-  const apiKeys = await loadAPIKeys();
+  const apiKeys = await loadAPIKeys(rootPath);
   const providerOrder = getProviderOrder(apiKeys);
   
   let selectedProvider: AIProvider | null = null;
@@ -266,8 +267,10 @@ export async function analyzeExtraItems(
 /**
  * Check if AI analysis is available (any provider configured)
  */
-export async function isAnalysisAvailable(): Promise<boolean> {
-  const apiKeys = await loadAPIKeys();
+export async function isAnalysisAvailable(rootPath: string): Promise<boolean> {
+  if (!rootPath) return false;
+  
+  const apiKeys = await loadAPIKeys(rootPath);
   const providerOrder = getProviderOrder(apiKeys);
   
   for (const provider of providerOrder) {

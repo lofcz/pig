@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useMemo, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Config, CompanyDetails, Ruleset } from '../types';
 import { mkdir, readFile } from '@tauri-apps/plugin-fs';
-import { moveProplatitFile, getMonthDates, getLastInvoicedMonth } from '../utils/logic';
+import { moveProplatitFile, getMonthDates, getLastInvoicedMonth, ensureYearFolder } from '../utils/logic';
 import { generateInvoiceOdt, convertToPdf } from '../utils/odt';
 import { analyzeExtraItems, isAnalysisAvailable, AnalysisProgress } from '../utils/analyzeExtraItems';
+import { loadGlobalSettings } from '../utils/globalSettings';
 import PDFPreviewModal from './PDFPreviewModal';
 import GenerateAllModal from './GenerateAllModal';
 import ExtraItemsList from './ExtraItemsList';
@@ -127,14 +128,14 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
   // Expose method to refresh analysis availability without re-rendering parent
   useImperativeHandle(ref, () => ({
     refreshAnalysisAvailability: () => {
-      isAnalysisAvailable().then(setCanAnalyze);
+      isAnalysisAvailable(config.rootPath).then(setCanAnalyze);
     }
   }));
 
-  // Check if AI analysis is available on mount
+  // Check if AI analysis is available on mount or when rootPath changes
   useEffect(() => {
-    isAnalysisAvailable().then(setCanAnalyze);
-  }, []);
+    isAnalysisAvailable(config.rootPath).then(setCanAnalyze);
+  }, [config.rootPath]);
 
   // Use the custom hook for proplatit files
   const {
@@ -147,7 +148,8 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
   } = useProplatitFiles({
     rootPath: config.rootPath,
     primaryCurrency: config.primaryCurrency,
-    exchangeRates: config.exchangeRates
+    exchangeRates: config.exchangeRates,
+    projectStructure: config.projectStructure,
   });
 
   const loading = proplatitLoading || lastInvoicedMonthLoading;
@@ -157,7 +159,7 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
   const reloadLastInvoicedMonth = async () => {
     setLastInvoicedMonthLoading(true);
     const yStr = currentDate.getFullYear().toString().slice(-2);
-    const lastM = await getLastInvoicedMonth(config.rootPath, yStr);
+    const lastM = await getLastInvoicedMonth(config.rootPath, yStr, config.projectStructure);
     setLastInvoicedMonth(lastM);
     setLastInvoicedMonthLoading(false);
   };
@@ -210,6 +212,7 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
       let errorCount = 0;
 
       await analyzeExtraItems(items, {
+        rootPath: config.rootPath,
         primaryCurrency: config.primaryCurrency,
         concurrency: 8,
         onProgress: setAnalysisProgress,
@@ -858,22 +861,23 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
     const baseName = `faktura_${slug}_${yearShort}_${monthShort}${suffix}`;
     const odtName = `${baseName}.odt`;
     
+    // Use the configured invoices folder structure
     const outputDir = isPreview 
       ? `${config.rootPath}\\.preview`
-      : `${config.rootPath}\\${yearShort}`;
+      : await ensureYearFolder(config.rootPath, draft.year, config.projectStructure);
 
     const outputPath = `${outputDir}\\${odtName}`;
     
     try {
-      await mkdir(outputDir, { recursive: true });
+      // ensureYearFolder already creates the directory, but mkdir is safe to call again
       const templatePath = ruleset.templatePath || 'src/templates/template.odt';
       await generateInvoiceOdt(templatePath, outputPath, replacements);
-      await convertToPdf(outputPath, outputDir, config.sofficePath);
+      await convertToPdf(outputPath, outputDir, loadGlobalSettings().sofficePath);
       
       if (!isPreview) {
         if (itemsToMove.length > 0) {
           for (const item of itemsToMove) {
-            await moveProplatitFile(config.rootPath, item.file.name);
+            await moveProplatitFile(config.rootPath, item.file.name, config.projectStructure);
           }
         }
         // Clean up user edits for this draft
@@ -911,6 +915,8 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
     userEditsRef.current.clear();
     // Clear adhoc invoices since they've been generated
     setAdhocInvoices([]);
+    // Clear total overrides since they applied to the generated periods
+    setTotalOverrides(new Map());
     // Reload both proplatit files and last invoiced month from disk
     // This will trigger drafts recalculation via useEffect
     await Promise.all([
@@ -1058,7 +1064,7 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
       
       setPreviewStep('Converting to PDF...');
       await generateInvoiceOdt(templatePath, outputPath, replacements);
-      await convertToPdf(outputPath, outputDir, config.sofficePath);
+      await convertToPdf(outputPath, outputDir, loadGlobalSettings().sofficePath);
       
       const pdfPath = outputPath.replace('.odt', '.pdf');
       setPreviewStep('Loading preview...');
@@ -1137,8 +1143,9 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
       };
 
       const year = issueDate.getFullYear();
-      const yearShort = year.toString().slice(-2);
-      const outputDir = `${config.rootPath}\\${yearShort}`;
+      
+      // Use the configured invoices folder structure
+      const outputDir = await ensureYearFolder(config.rootPath, year, config.projectStructure);
       
       // Normalize the name for filename: remove diacritics, lowercase, replace spaces with underscores
       const normalizedName = invoice.name
@@ -1151,13 +1158,13 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
       const baseName = `faktura_adhoc_${normalizedName}_${invoice.invoiceNo}`;
       const outputPath = `${outputDir}\\${baseName}.odt`;
 
-      await mkdir(outputDir, { recursive: true });
+      // ensureYearFolder already creates the directory
       
       // Use first ruleset's template or default
       const templatePath = config.rulesets[0]?.templatePath || 'src/templates/template.odt';
       
       await generateInvoiceOdt(templatePath, outputPath, replacements);
-      await convertToPdf(outputPath, outputDir, config.sofficePath);
+      await convertToPdf(outputPath, outputDir, loadGlobalSettings().sofficePath);
       
       return outputPath.replace('.odt', '.pdf');
     } catch (e) {

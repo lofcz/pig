@@ -23,30 +23,33 @@ export interface APIKeysEditorRef {
 }
 
 interface APIKeysEditorProps {
+  rootPath: string;
   onVisibilityChange?: (isVisible: boolean) => void;
 }
 
 export const APIKeysEditor = forwardRef<APIKeysEditorRef, APIKeysEditorProps>(
-  function APIKeysEditor(_props, ref) {
+  function APIKeysEditor({ rootPath }, ref) {
     const [apiKeys, setApiKeys] = useState<APIKeysConfig>({});
     const [isLoaded, setIsLoaded] = useState(false);
     const [isDirty, setIsDirty] = useState(false);
     const [providerOrder, setProviderOrder] = useState<ProviderId[]>(DEFAULT_PROVIDER_ORDER);
 
-    // Load API keys on mount
+    // Load API keys on mount or when rootPath changes
     useEffect(() => {
-      loadAPIKeys().then(keys => {
-        setApiKeys(keys);
-        setProviderOrder(getProviderOrder(keys));
-        setIsLoaded(true);
-      });
-    }, []);
+      if (rootPath) {
+        loadAPIKeys(rootPath).then(keys => {
+          setApiKeys(keys);
+          setProviderOrder(getProviderOrder(keys));
+          setIsLoaded(true);
+        });
+      }
+    }, [rootPath]);
 
     // Expose save method to parent
     useImperativeHandle(ref, () => ({
       save: async () => {
-        if (isDirty) {
-          await saveAPIKeys({ ...apiKeys, providerOrder });
+        if (isDirty && rootPath) {
+          await saveAPIKeys(rootPath, { ...apiKeys, providerOrder });
           setIsDirty(false);
         }
       },

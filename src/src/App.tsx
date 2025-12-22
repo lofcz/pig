@@ -1,14 +1,17 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { loadConfig, saveTheme } from './utils/config';
+import { loadConfigFromPath, saveConfig } from './utils/config';
 import { loadSmtpCredentials } from './utils/smtpCredentials';
-import { Config, ThemePreference } from './types';
+import { loadGlobalSettings, saveGlobalSettings, GlobalSettings } from './utils/globalSettings';
+import { Config } from './types';
+import { useProjectStore } from './hooks/useProjectStore';
 import Generator, { GeneratorRef } from './components/Generator';
 import ConfigEditor, { ConfigEditorRef, SETTINGS_TABS, SettingsTabId } from './components/ConfigEditor';
-import { ThemeProvider, Theme, useTheme } from './contexts/ThemeContext';
+import ProjectPicker from './components/ProjectPicker';
+import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { ConfirmModalProvider } from './contexts/ConfirmModalContext';
 import { PromptModalProvider } from './contexts/PromptModalContext';
 import { Toaster } from 'sonner';
-import { FileText, Settings, Save, Loader2, Menu, X, Home } from 'lucide-react';
+import { FileText, Settings, Save, Loader2, Menu, X, Home, FolderOpen } from 'lucide-react';
 import './App.css';
 
 type TaglineTriplet = readonly [string, string, string];
@@ -39,10 +42,12 @@ function AppContent({
   config,
   setConfig,
   taglineTriplet,
+  onCloseProject,
 }: {
   config: Config;
   setConfig: (c: Config) => void;
   taglineTriplet: TaglineTriplet;
+  onCloseProject: () => void;
 }) {
   const [showSettings, setShowSettings] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -131,10 +136,12 @@ function AppContent({
     });
   }, [setConfig]);
 
-  const handleMobileNavigation = (action: 'home' | SettingsTabId) => {
+  const handleMobileNavigation = (action: 'home' | 'projects' | SettingsTabId) => {
     setMobileMenuOpen(false);
     if (action === 'home') {
       if (showSettings) closeSettings();
+    } else if (action === 'projects') {
+      onCloseProject();
     } else {
       // It's a settings tab - set it via ref and open settings
       configEditorRef.current?.setTab(action);
@@ -170,7 +177,7 @@ function AppContent({
                   className="header-title text-xl font-bold"
                   style={{ color: 'var(--text-primary)' }}
                 >
-                  Personal Invoice Generator
+                  {config.projectName || 'Personal Invoice Generator'}
                 </h1>
                 <p 
                   className="header-tagline text-xs font-medium"
@@ -183,6 +190,15 @@ function AppContent({
 
             {/* Desktop Actions */}
             <div className="desktop-actions">
+              <button
+                onClick={onCloseProject}
+                className="btn btn-secondary flex items-center gap-2"
+                title="Switch project"
+              >
+                <FolderOpen size={18} />
+                <span className="hidden lg:inline">Projects</span>
+              </button>
+
               {showSettings && (
                 <button
                   onClick={() => configEditorRef.current?.save()}
@@ -246,6 +262,13 @@ function AppContent({
                 >
                   <Home size={18} className="mobile-sidebar-item-icon" />
                   <span>Generator</span>
+                </button>
+                <button
+                  className="mobile-sidebar-item"
+                  onClick={() => handleMobileNavigation('projects')}
+                >
+                  <FolderOpen size={18} className="mobile-sidebar-item-icon" />
+                  <span>Switch Project</span>
                 </button>
               </nav>
             </div>
@@ -347,78 +370,173 @@ function App() {
   const [taglineTriplet] = useState<TaglineTriplet>(() =>
     pickRandomTriplet<TaglineTriplet>(TAGLINE_TRIPLETS, ['Infinite', 'Money', 'Glitch'])
   );
+  
+  // Load global settings (theme) once on mount
+  const globalSettings = loadGlobalSettings();
 
+  const {
+    store,
+    activeProject,
+    isValidating,
+    removeProject,
+    setActive,
+    closeProject,
+    createProject,
+    openExistingRepository,
+    updateName,
+  } = useProjectStore();
+
+  // Load config when active project changes
   useEffect(() => {
-    // Load config and merge SMTP credentials
-    Promise.all([loadConfig(), loadSmtpCredentials()]).then(([c, credentials]) => {
-      // Merge SMTP passwords into connectors
-      if (c.emailConnectors) {
-        c.emailConnectors = c.emailConnectors.map(connector => ({
-          ...connector,
-          password: credentials[connector.id] || connector.password || ''
-        }));
+    const loadProjectConfig = async () => {
+      setLoading(true);
+      
+      if (!activeProject) {
+        setConfig(null);
+        setLoading(false);
+        return;
       }
-      setConfig(c);
+      
+      try {
+        const [c, credentials] = await Promise.all([
+          loadConfigFromPath(activeProject.path),
+          loadSmtpCredentials(activeProject.path),
+        ]);
+        
+        // Migrate legacy theme/sofficePath to global settings if present
+        const currentGlobalSettings = loadGlobalSettings();
+        let needsGlobalSave = false;
+        const newGlobalSettings: GlobalSettings = { ...currentGlobalSettings };
+        
+        if (c.theme && currentGlobalSettings.theme === 'system') {
+          // Only migrate if global settings are at default
+          newGlobalSettings.theme = c.theme;
+          needsGlobalSave = true;
+        }
+        
+        if (c.sofficePath && !currentGlobalSettings.sofficePath) {
+          // Only migrate if global settings don't have a path set
+          newGlobalSettings.sofficePath = c.sofficePath;
+          needsGlobalSave = true;
+        }
+        
+        if (needsGlobalSave) {
+          saveGlobalSettings(newGlobalSettings);
+          // Apply theme immediately
+          const root = document.documentElement;
+          if (newGlobalSettings.theme === 'system') {
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            root.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+          } else {
+            root.setAttribute('data-theme', newGlobalSettings.theme);
+          }
+        }
+        
+        // Merge SMTP passwords into connectors
+        if (c.emailConnectors) {
+          c.emailConnectors = c.emailConnectors.map(connector => ({
+            ...connector,
+            password: credentials[connector.id] || connector.password || ''
+          }));
+        }
+        
+        // If config has a project name and it differs from stored, update the store
+        if (c.projectName && c.projectName !== activeProject.name) {
+          updateName(activeProject.id, c.projectName);
+        }
+        
+        // Ensure project name is set (fallback to stored name)
+        if (!c.projectName) {
+          c.projectName = activeProject.name;
+        }
+        
+        setConfig(c);
+      } catch (e) {
+        console.error("Failed to load project config:", e);
+        setConfig(null);
+      }
+      
       setLoading(false);
-    });
+    };
+    
+    loadProjectConfig();
+  }, [activeProject, updateName]);
+
+  // Auto-save config when it changes
+  const handleConfigChange = useCallback((newConfig: Config) => {
+    setConfig(newConfig);
+    // Save to file
+    saveConfig(newConfig).catch(e => console.error("Failed to auto-save config:", e));
   }, []);
+
+  // Handle project close (return to picker)
+  const handleCloseProject = useCallback(() => {
+    closeProject();
+    setConfig(null);
+  }, [closeProject]);
+
+  // Handle opening a recent project
+  const handleOpenRecentProject = useCallback((project: typeof store.recentProjects[0]) => {
+    if (project.isValid !== false) {
+      setActive(project.id);
+    }
+  }, [setActive]);
 
   if (loading) {
     return (
-      <div 
-        className="flex flex-col items-center justify-center h-screen gap-4"
-        style={{ backgroundColor: 'var(--bg-base)' }}
-      >
+      <ThemeProvider initialTheme={globalSettings.theme}>
         <div 
-          className="w-16 h-16 rounded-2xl flex items-center justify-center animate-pulse"
-          style={{ 
-            background: 'linear-gradient(135deg, var(--accent-500), var(--accent-600))',
-          }}
+          className="flex flex-col items-center justify-center h-screen gap-4"
+          style={{ backgroundColor: 'var(--bg-base)' }}
         >
-          <FileText size={32} className="text-white" />
+          <div 
+            className="w-16 h-16 rounded-2xl flex items-center justify-center animate-pulse"
+            style={{ 
+              background: 'linear-gradient(135deg, var(--accent-500), var(--accent-600))',
+            }}
+          >
+            <FileText size={32} className="text-white" />
+          </div>
+          <div className="flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
+            <Loader2 size={18} className="animate-spin" />
+            <span className="text-sm font-medium">
+              {activeProject ? 'Loading project...' : 'Initializing...'}
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
-          <Loader2 size={18} className="animate-spin" />
-          <span className="text-sm font-medium">Loading configuration...</span>
-        </div>
-      </div>
+      </ThemeProvider>
     );
   }
 
-  if (!config) {
+  // No active project - show project picker
+  if (!activeProject || !config) {
     return (
-      <div 
-        className="flex flex-col items-center justify-center h-screen gap-4"
-        style={{ backgroundColor: 'var(--bg-base)' }}
-      >
-        <div 
-          className="w-16 h-16 rounded-2xl flex items-center justify-center"
-          style={{ 
-            background: 'linear-gradient(135deg, var(--error-500), var(--error-600))',
-          }}
-        >
-          <FileText size={32} className="text-white" />
-        </div>
-        <p style={{ color: 'var(--error-500)' }} className="font-medium">
-          Error loading configuration
-        </p>
-      </div>
+      <ThemeProvider initialTheme={globalSettings.theme}>
+        <ConfirmModalProvider>
+          <ProjectPicker
+            recentProjects={store.recentProjects}
+            isValidating={isValidating}
+            onOpenProject={handleOpenRecentProject}
+            onRemoveProject={removeProject}
+            onCreateProject={createProject}
+            onOpenExisting={openExistingRepository}
+          />
+          <ThemedToaster />
+        </ConfirmModalProvider>
+      </ThemeProvider>
     );
   }
-
-  const handleThemeChange = (theme: Theme) => {
-    saveTheme(theme as ThemePreference);
-    setConfig({ ...config, theme: theme as ThemePreference });
-  };
 
   return (
-    <ThemeProvider 
-      initialTheme={config.theme || 'system'} 
-      onThemeChange={handleThemeChange}
-    >
+    <ThemeProvider initialTheme={globalSettings.theme}>
       <ConfirmModalProvider>
         <PromptModalProvider>
-          <AppContent config={config} setConfig={setConfig} taglineTriplet={taglineTriplet} />
+          <AppContent 
+            config={config} 
+            setConfig={handleConfigChange} 
+            taglineTriplet={taglineTriplet}
+            onCloseProject={handleCloseProject}
+          />
           <ThemedToaster />
         </PromptModalProvider>
       </ConfirmModalProvider>

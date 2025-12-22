@@ -1,4 +1,5 @@
-import { readTextFile, writeTextFile, exists } from '@tauri-apps/plugin-fs';
+import { readTextFile, writeTextFile, exists, mkdir } from '@tauri-apps/plugin-fs';
+import { join } from '@tauri-apps/api/path';
 
 // SMTP Credentials - stored separately and encrypted for security
 // Maps connector ID to password
@@ -6,6 +7,7 @@ export interface SmtpCredentials {
   [connectorId: string]: string;
 }
 
+const PIG_FOLDER = '.pig';
 const SMTP_CREDENTIALS_FILE = 'smtp_credentials.enc';
 
 // Note: This is NOT cryptographically secure - it's just obfuscation
@@ -48,10 +50,25 @@ export function decryptSmtpCredentials(encrypted: string): SmtpCredentials {
   }
 }
 
-export async function loadSmtpCredentials(): Promise<SmtpCredentials> {
+/**
+ * Get the path to the SMTP credentials file
+ */
+async function getCredentialsPath(rootPath: string): Promise<string> {
+  return await join(rootPath, PIG_FOLDER, SMTP_CREDENTIALS_FILE);
+}
+
+/**
+ * Load SMTP credentials from the project's .pig folder
+ */
+export async function loadSmtpCredentials(rootPath: string): Promise<SmtpCredentials> {
+  if (!rootPath) {
+    return {};
+  }
+  
   try {
-    if (await exists(SMTP_CREDENTIALS_FILE)) {
-      const encrypted = await readTextFile(SMTP_CREDENTIALS_FILE);
+    const credentialsPath = await getCredentialsPath(rootPath);
+    if (await exists(credentialsPath)) {
+      const encrypted = await readTextFile(credentialsPath);
       return decryptSmtpCredentials(encrypted);
     }
   } catch (e) {
@@ -60,10 +77,24 @@ export async function loadSmtpCredentials(): Promise<SmtpCredentials> {
   return {};
 }
 
-export async function saveSmtpCredentials(credentials: SmtpCredentials): Promise<void> {
+/**
+ * Save SMTP credentials to the project's .pig folder
+ */
+export async function saveSmtpCredentials(rootPath: string, credentials: SmtpCredentials): Promise<void> {
+  if (!rootPath) {
+    throw new Error("Cannot save SMTP credentials: rootPath is not set");
+  }
+  
   try {
+    // Ensure .pig folder exists
+    const pigPath = await join(rootPath, PIG_FOLDER);
+    if (!await exists(pigPath)) {
+      await mkdir(pigPath, { recursive: true });
+    }
+    
+    const credentialsPath = await getCredentialsPath(rootPath);
     const encrypted = encryptSmtpCredentials(credentials);
-    await writeTextFile(SMTP_CREDENTIALS_FILE, encrypted);
+    await writeTextFile(credentialsPath, encrypted);
   } catch (e) {
     console.error("Failed to save SMTP credentials:", e);
     throw e;
@@ -76,4 +107,3 @@ export function maskPassword(password: string | undefined): string {
   if (password.length <= 4) return '••••';
   return '••••••••••••';
 }
-
