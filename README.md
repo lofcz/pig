@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/5a41b510-7120-4c63-a680-3800c46ab139" alt="PIG - Personal Invoice Generator" width="100%" />
-</p>
-
 <h1 align="center">🐷 PIG</h1>
 <p align="center">
   <strong>Personal Invoice Generator</strong><br>
@@ -9,12 +5,16 @@
 </p>
 
 <p align="center">
-  <a href="#features">Features</a> •
+  <a href="#-features">Features</a> •
   <a href="#installation">Installation</a> •
   <a href="#usage">Usage</a> •
   <a href="#configuration">Configuration</a> •
   <a href="#template-placeholders">Placeholders</a> •
   <a href="#license">License</a>
+</p>
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/5a41b510-7120-4c63-a680-3800c46ab139" alt="PIG - Personal Invoice Generator" width="800px" />
 </p>
 
 ---
