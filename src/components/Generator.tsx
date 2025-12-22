@@ -27,7 +27,8 @@ import {
   Pencil,
   X,
   Plus,
-  Trash2
+  Trash2,
+  RefreshCw
 } from 'lucide-react';
 import { findOption, CreatableSelect, Select, SelectOption } from './Select';
 import { DatePicker } from './DatePicker';
@@ -120,6 +121,9 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
   const [adhocModalOpen, setAdhocModalOpen] = useState(false);
   const [editingAdhocInvoice, setEditingAdhocInvoice] = useState<AdhocInvoice | null>(null);
 
+  // Manual refresh state
+  const [refreshing, setRefreshing] = useState(false);
+
   // Expose method to refresh analysis availability without re-rendering parent
   useImperativeHandle(ref, () => ({
     refreshAnalysisAvailability: () => {
@@ -157,6 +161,21 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
     setLastInvoicedMonth(lastM);
     setLastInvoicedMonthLoading(false);
   };
+
+  // Manual refresh - rescans filesystem while preserving local state
+  const handleRefresh = useCallback(async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      // Reload invoice data and extra files in parallel
+      await Promise.all([
+        reloadLastInvoicedMonth(),
+        loadProplatitFiles()
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshing, loadProplatitFiles]);
 
   // AI-powered analysis of extra items
   const handleAnalyzeExtraItems = useCallback(async () => {
@@ -1165,18 +1184,29 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
         {/* Page Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
-          <h2 
-            className="text-2xl lg:text-3xl font-bold mb-1"
-            style={{ color: 'var(--text-primary)' }}
-          >
-            Pending Invoices
-          </h2>
+          <div className="flex items-center gap-2 mb-1">
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing || loading}
+              className="btn btn-ghost btn-icon"
+              style={{ color: 'var(--text-muted)' }}
+              title="Refresh invoices"
+            >
+              <RefreshCw size={20} className={refreshing ? 'animate-spin' : ''} />
+            </button>
+            <h2 
+              className="text-2xl lg:text-3xl font-bold"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              Pending Invoices
+            </h2>
+          </div>
           <p 
             className="text-sm"
             style={{ color: 'var(--text-muted)' }}
           >
-            {drafts.length > 0 
-              ? `${drafts.length} invoice${drafts.length > 1 ? 's' : ''} ready for generation`
+            {drafts.length + adhocInvoices.length > 0 
+              ? `${drafts.length + adhocInvoices.length} invoice${drafts.length + adhocInvoices.length !== 1 ? 's' : ''} ready for generation`
               : 'No pending invoices at this time'
             }
           </p>
