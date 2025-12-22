@@ -1,2 +1,3 @@
-#!/usr/bin/env sh
-cd src && npm run typecheck
+#!/bin/sh
+cd src
+node ./node_modules/typescript/bin/tsc --noEmit
