@@ -39,7 +39,7 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: "./src-tauri -> target"
+          workspaces: "./src/src-tauri -> target"
           shared-key: ${{ matrix.target }}
 
       - name: Setup Node.js
@@ -47,6 +47,7 @@ jobs:
         with:
           node-version: 22
           cache: "npm"
+          cache-dependency-path: src/package-lock.json
 
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -62,6 +63,7 @@ jobs:
             libayatana-appindicator3-dev
 
       - name: Install frontend dependencies
+        working-directory: src
         run: npm ci
 
       - name: Build Tauri app
@@ -69,6 +71,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          projectPath: src
           args: --target ${{ matrix.target }}
 
       - name: Upload build artifacts
@@ -76,7 +79,7 @@ jobs:
         with:
           name: binaries-${{ matrix.target }}
           path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/
+            src/src-tauri/target/${{ matrix.target }}/release/bundle/
           if-no-files-found: error
           retention-days: 7
 
