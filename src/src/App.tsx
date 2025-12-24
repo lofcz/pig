@@ -10,6 +10,8 @@ import ProjectPicker from './components/ProjectPicker';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { ConfirmModalProvider } from './contexts/ConfirmModalContext';
 import { PromptModalProvider } from './contexts/PromptModalContext';
+import { PDFPreviewModalProvider } from './contexts/PDFPreviewModalContext';
+import { AdhocInvoiceModalProvider } from './contexts/AdhocInvoiceModalContext';
 import { Toaster } from 'sonner';
 import { FileText, Settings, Save, Loader2, Menu, X, Home, FolderOpen } from 'lucide-react';
 import './App.css';
@@ -531,13 +533,17 @@ function App() {
     <ThemeProvider initialTheme={globalSettings.theme}>
       <ConfirmModalProvider>
         <PromptModalProvider>
-          <AppContent 
-            config={config} 
-            setConfig={handleConfigChange} 
-            taglineTriplet={taglineTriplet}
-            onCloseProject={handleCloseProject}
-          />
-          <ThemedToaster />
+          <PDFPreviewModalProvider>
+            <AdhocInvoiceModalProvider>
+              <AppContent 
+                config={config} 
+                setConfig={handleConfigChange} 
+                taglineTriplet={taglineTriplet}
+                onCloseProject={handleCloseProject}
+              />
+              <ThemedToaster />
+            </AdhocInvoiceModalProvider>
+          </PDFPreviewModalProvider>
         </PromptModalProvider>
       </ConfirmModalProvider>
     </ThemeProvider>
