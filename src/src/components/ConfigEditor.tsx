@@ -2,8 +2,9 @@ import { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 're
 import { Config, CompanyDetails, Contact, EmailTemplate, EmailConnector, Ruleset } from '../types';
 import { saveConfig } from '../utils/config';
 import { loadSmtpCredentials, saveSmtpCredentials, SmtpCredentials } from '../utils/smtpCredentials';
-import { useConfirm } from '../contexts/ConfirmModalContext';
-import { usePrompt } from '../contexts/PromptModalContext';
+import { modal } from '../contexts/ModalContext';
+import { ConfirmModal } from './modals/ConfirmModal';
+import { PromptModal } from './modals/PromptModal';
 import { APIKeysEditorRef } from './APIKeysEditor';
 import { GeneralSettingsTab } from './GeneralSettingsTab';
 import { CompanyListEditor } from './CompanyListEditor';
@@ -65,8 +66,6 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
       forceUpdate({});
     }
   };
-  const confirm = useConfirm();
-  const prompt = usePrompt();
   
   // Ref for API Keys editor (manages its own state)
   const apiKeysEditorRef = useRef<APIKeysEditorRef>(null);
@@ -139,7 +138,7 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
   // Company management
   const addCompany = async (isSupplier: boolean) => {
     const type = isSupplier ? 'Supplier' : 'Customer';
-    const id = await prompt({
+    const id = await modal.open(PromptModal, {
       title: `Add New ${type}`,
       message: `Enter a unique ID for this ${type.toLowerCase()} (e.g., "company1"):`,
       placeholder: 'my-company',
@@ -181,7 +180,7 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
 
   const removeCompany = async (id: string) => {
     const company = localConfig.companies.find(c => c.id === id);
-    const confirmed = await confirm({
+    const confirmed = await modal.open(ConfirmModal, {
       title: 'Delete Company',
       message: `Are you sure you want to delete "${company?.name || id}"? This action cannot be undone.`,
       confirmText: 'Delete',
@@ -199,7 +198,7 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
 
   // Contact management
   const addContact = async () => {
-    const id = await prompt({
+    const id = await modal.open(PromptModal, {
       title: 'Add New Contact',
       message: 'Enter a unique ID for this contact (e.g., "john-doe"):',
       placeholder: 'contact-1',
@@ -236,7 +235,7 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
 
   const removeContact = async (id: string) => {
     const contact = (localConfig.contacts || []).find(c => c.id === id);
-    const confirmed = await confirm({
+    const confirmed = await modal.open(ConfirmModal, {
       title: 'Delete Contact',
       message: `Are you sure you want to delete "${contact?.name || id}"? This action cannot be undone.`,
       confirmText: 'Delete',
@@ -254,7 +253,7 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
 
   // Email template management
   const addEmailTemplate = async () => {
-    const id = await prompt({
+    const id = await modal.open(PromptModal, {
       title: 'Add New Email Template',
       message: 'Enter a unique ID for this template (e.g., "invoice-notification"):',
       placeholder: 'template-1',
@@ -287,7 +286,7 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
 
   const removeEmailTemplate = async (id: string) => {
     const template = (localConfig.emailTemplates || []).find(t => t.id === id);
-    const confirmed = await confirm({
+    const confirmed = await modal.open(ConfirmModal, {
       title: 'Delete Email Template',
       message: `Are you sure you want to delete "${template?.name || id}"? This action cannot be undone.`,
       confirmText: 'Delete',
@@ -305,7 +304,7 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
 
   // Email connector (SMTP) management
   const addEmailConnector = async () => {
-    const id = await prompt({
+    const id = await modal.open(PromptModal, {
       title: 'Add New SMTP Connector',
       message: 'Enter a unique ID for this connector (e.g., "gmail-main"):',
       placeholder: 'smtp-1',
@@ -347,7 +346,7 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
 
   const removeEmailConnector = async (id: string) => {
     const connector = (localConfig.emailConnectors || []).find(c => c.id === id);
-    const confirmed = await confirm({
+    const confirmed = await modal.open(ConfirmModal, {
       title: 'Delete SMTP Connector',
       message: `Are you sure you want to delete "${connector?.name || id}"? This action cannot be undone.`,
       confirmText: 'Delete',
@@ -365,7 +364,7 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
 
   // Ruleset management
   const addRuleset = async () => {
-    const id = await prompt({
+    const id = await modal.open(PromptModal, {
       title: 'Add New Ruleset',
       message: 'Enter a unique ID for this ruleset (e.g., "main-client"):',
       placeholder: 'ruleset-1',
@@ -399,7 +398,7 @@ const ConfigEditor = forwardRef<ConfigEditorRef, ConfigEditorProps>(({ config, o
 
   const removeRuleset = async (id: string) => {
     const ruleset = (localConfig.rulesets || []).find(r => r.id === id);
-    const confirmed = await confirm({
+    const confirmed = await modal.open(ConfirmModal, {
       title: 'Delete Ruleset',
       message: `Are you sure you want to delete "${ruleset?.name || id}"? This action cannot be undone.`,
       confirmText: 'Delete',

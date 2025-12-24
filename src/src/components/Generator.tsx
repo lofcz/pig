@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHand
 import { Config } from '../types';
 import { getLastInvoicedMonth } from '../utils/logic';
 import { isAnalysisAvailable } from '../utils/analyzeExtraItems';
-import GenerateAllModal from './GenerateAllModal';
+import { modal } from '../contexts/ModalContext';
+import { GenerateAllModalComponent } from './GenerateAllModal';
 import { useProplatitFiles } from '../hooks';
 import { Loader2 } from 'lucide-react';
 
@@ -16,7 +17,7 @@ import {
   useAdhocInvoices,
   useExtraItemsAnalysis,
   useInvoiceGeneration,
-  useGenerateAllModal,
+  findCustomerForDraft,
   AdhocInvoicesList,
   ExtraItemsSection,
   GeneratorHeader,
@@ -113,22 +114,7 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
     setDrafts,
   });
 
-  // Generate all modal hook
-  const {
-    generateAllModalOpen,
-    generateAllInvoicesSnapshot,
-    generateAllExtraFilesSnapshot,
-    openGenerateAllModal,
-    closeGenerateAllModal,
-  } = useGenerateAllModal({
-    config,
-    drafts,
-    adhocInvoices,
-    selectedProplatitFiles,
-  });
-
   const loading = proplatitLoading || lastInvoicedMonthLoading;
-  const showPageLoading = loading && !generateAllModalOpen;
 
   // Expose method to refresh analysis availability without re-rendering parent
   useImperativeHandle(ref, () => ({
@@ -216,6 +202,77 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
     ]);
   }, [clearAdhocInvoices, loadProplatitFiles, reloadLastInvoicedMonth]);
 
+  // Build invoice snapshots for Generate All modal
+  const buildInvoiceSnapshots = useCallback(() => {
+    const regularDrafts = drafts
+      .filter(d => d.status !== 'done')
+      .map(d => {
+        const customer = findCustomerForDraft(d, config);
+        const ruleset = config.rulesets.find(r => r.id === d.rulesetId);
+        const dueDateOffsetDays = ruleset?.dueDateOffsetDays ?? 14;
+        
+        // Calculate issue date and due date
+        let day = 1;
+        if (d.invoiceNoOverride.length === 8) {
+          day = parseInt(d.invoiceNoOverride.substring(0, 2));
+        }
+        const issueDate = new Date(d.year, d.month - 1, day);
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + dueDateOffsetDays);
+        
+        return {
+          id: d.id,
+          label: d.label,
+          amount: d.amount,
+          customerId: customer?.id,
+          invoiceNo: d.invoiceNoOverride,
+          issueDate: `${issueDate.getDate()}. ${issueDate.getMonth() + 1}. ${issueDate.getFullYear()}`,
+          dueDate: `${dueDate.getDate()}. ${dueDate.getMonth() + 1}. ${dueDate.getFullYear()}`,
+          description: d.description,
+        };
+      });
+    
+    // Include adhoc invoices with a special prefix
+    const adhocDrafts = adhocInvoices.map(inv => {
+      const issueDate = new Date(inv.issueDate);
+      const dueDate = new Date(inv.dueDate);
+      return {
+        id: `adhoc:${inv.id}`,
+        label: inv.name,
+        amount: inv.value,
+        customerId: inv.customerId,
+        invoiceNo: inv.invoiceNo,
+        issueDate: `${issueDate.getDate()}. ${issueDate.getMonth() + 1}. ${issueDate.getFullYear()}`,
+        dueDate: `${dueDate.getDate()}. ${dueDate.getMonth() + 1}. ${dueDate.getFullYear()}`,
+        description: inv.description,
+      };
+    });
+    
+    return [...regularDrafts, ...adhocDrafts];
+  }, [drafts, adhocInvoices, config]);
+
+  // Build extra files snapshots for Generate All modal
+  const buildExtraFilesSnapshots = useCallback(() => {
+    return selectedProplatitFiles.map(item => ({
+      // Replace 'proplatit' with 'proplaceno' in the path since files get moved during generation
+      path: item.file.path.replace(/proplatit([\\\/])/i, 'proplaceno$1'),
+      name: item.file.name
+    }));
+  }, [selectedProplatitFiles]);
+
+  // Handler to open Generate All modal using context
+  const openGenerateAllModal = useCallback(async () => {
+    await modal.open(GenerateAllModalComponent, {
+      config,
+      invoices: buildInvoiceSnapshots(),
+      extraFiles: buildExtraFilesSnapshots(),
+      primaryCurrency: config.primaryCurrency,
+      rootPath: config.rootPath,
+      onGenerateInvoice: handleGenerateById,
+      onComplete: handleGenerateAllComplete,
+    });
+  }, [config, buildInvoiceSnapshots, buildExtraFilesSnapshots, handleGenerateById, handleGenerateAllComplete]);
+
   // Draft update handler for child components
   const handleUpdateDraft = useCallback((index: number, updates: Partial<InvoiceDraft>) => {
     setDrafts(ds => ds.map((d, idx) => 
@@ -229,7 +286,7 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
     userEditsRef.current.set(draftId, { ...existingEdits, ...edits });
   }, []);
 
-  const totalDraftValue = drafts.reduce((sum, d) => sum + d.amount, 0);
+  const totalDraftValue = drafts.reduce((sum, d) => sum + d.amount, 0) + adhocTotal;
 
   // Helper to check if there are any invoices ready for generation
   const hasActiveInvoices = drafts.length > 0 || adhocInvoices.length > 0;
@@ -239,7 +296,7 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8">
-      {showPageLoading ? (
+      {loading ? (
         <div className="p-8 flex items-center justify-center min-h-[400px]">
           <div className="flex flex-col items-center gap-4">
             <Loader2 size={32} className="animate-spin" style={{ color: 'var(--accent-500)' }} />
@@ -306,18 +363,6 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
         </div>
       </>
       )}
-
-      <GenerateAllModal
-        isOpen={generateAllModalOpen}
-        onClose={closeGenerateAllModal}
-        invoices={generateAllInvoicesSnapshot}
-        primaryCurrency={config.primaryCurrency}
-        onGenerateInvoice={handleGenerateById}
-        rootPath={config.rootPath}
-        onComplete={handleGenerateAllComplete}
-        config={config}
-        extraFiles={generateAllExtraFilesSnapshot}
-      />
     </div>
   );
 });

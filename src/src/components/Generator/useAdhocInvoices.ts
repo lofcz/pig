@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { AdhocInvoice } from './types';
-import { useAdhocInvoiceModal } from '../../contexts/AdhocInvoiceModalContext';
+import { AdhocInvoiceModal } from '../modals/AdhocInvoiceModal';
 import { CompanyDetails } from '../../types';
 
 export interface UseAdhocInvoicesProps {
@@ -19,10 +19,9 @@ export interface UseAdhocInvoicesReturn {
 
 export function useAdhocInvoices({ companies, primaryCurrency }: UseAdhocInvoicesProps): UseAdhocInvoicesReturn {
   const [adhocInvoices, setAdhocInvoices] = useState<AdhocInvoice[]>([]);
-  const adhocModal = useAdhocInvoiceModal();
 
   const openAddAdhocModal = useCallback(async () => {
-    const result = await adhocModal.create({ companies, primaryCurrency });
+    const result = await AdhocInvoiceModal.create({ companies, primaryCurrency });
     if (result) {
       const newInvoice: AdhocInvoice = {
         ...result,
@@ -30,16 +29,16 @@ export function useAdhocInvoices({ companies, primaryCurrency }: UseAdhocInvoice
       };
       setAdhocInvoices(prev => [...prev, newInvoice]);
     }
-  }, [adhocModal, companies, primaryCurrency]);
+  }, [companies, primaryCurrency]);
 
   const openEditAdhocModal = useCallback(async (invoice: AdhocInvoice) => {
-    const result = await adhocModal.edit({ companies, primaryCurrency, invoice });
+    const result = await AdhocInvoiceModal.edit({ companies, primaryCurrency, invoice });
     if (result) {
       setAdhocInvoices(prev => prev.map(inv => 
         inv.id === invoice.id ? { ...result, id: invoice.id } : inv
       ));
     }
-  }, [adhocModal, companies, primaryCurrency]);
+  }, [companies, primaryCurrency]);
 
   const handleRemoveAdhocInvoice = useCallback((id: string) => {
     setAdhocInvoices(prev => prev.filter(inv => inv.id !== id));

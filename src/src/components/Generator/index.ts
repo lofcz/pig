@@ -14,8 +14,6 @@ export { useExtraItemsAnalysis } from './useExtraItemsAnalysis';
 export type { UseExtraItemsAnalysisProps, UseExtraItemsAnalysisReturn } from './useExtraItemsAnalysis';
 export { useInvoiceGeneration } from './useInvoiceGeneration';
 export type { UseInvoiceGenerationProps, UseInvoiceGenerationReturn } from './useInvoiceGeneration';
-export { useGenerateAllModal } from './useGenerateAllModal';
-export type { UseGenerateAllModalProps, UseGenerateAllModalReturn } from './useGenerateAllModal';
 
 // Components
 export { AdhocInvoicesList } from './AdhocInvoicesList';

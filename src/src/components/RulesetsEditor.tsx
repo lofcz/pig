@@ -5,7 +5,8 @@ import { useSortable } from '@dnd-kit/react/sortable';
 import { move } from '@dnd-kit/helpers';
 import { open } from '@tauri-apps/plugin-dialog';
 import { exists } from '@tauri-apps/plugin-fs';
-import { useConfirm } from '../contexts/ConfirmModalContext';
+import { modal } from '../contexts/ModalContext';
+import { ConfirmModal } from './modals/ConfirmModal';
 import { useEventListener } from '../hooks';
 import { DatePicker } from './DatePicker';
 import { Select, SelectOption, findOption } from './Select';
@@ -584,8 +585,6 @@ function CustomerRulesEditor({ rules, companies, onChange }: CustomerRulesEditor
     [targets]
   );
   
-  const confirm = useConfirm();
-  
   const rulesRef = useRef(rules);
   const targetsRef = useRef(targets);
   const onChangeRef = useRef(onChange);
@@ -628,7 +627,7 @@ function CustomerRulesEditor({ rules, companies, onChange }: CustomerRulesEditor
     const currentTargets = targetsRef.current;
     const rule = currentRules[idx];
     const targetCompany = currentTargets.find(t => t.id === rule.companyId);
-    const confirmed = await confirm({
+    const confirmed = await modal.open(ConfirmModal, {
       title: 'Delete Invoicing Rule',
       message: `Are you sure you want to delete this rule? (${rule.condition} → ${targetCompany?.name || rule.companyId})`,
       confirmText: 'Delete',
@@ -641,7 +640,7 @@ function CustomerRulesEditor({ rules, companies, onChange }: CustomerRulesEditor
       newR.splice(idx, 1);
       onChangeRef.current(newR);
     }
-  }, [confirm]);
+  }, []);
   
   const updateRule = useCallback((idx: number, field: keyof CustomerRule, val: any) => {
     const currentRules = rulesRef.current;
@@ -823,7 +822,6 @@ interface SalaryEditorProps {
 }
 
 function SalaryEditor({ rules, primaryCurrency, onChange }: SalaryEditorProps) {
-  const confirm = useConfirm();
   const onChangeRef = useRef(onChange);
   const rulesRef = useRef(rules);
   
@@ -848,7 +846,7 @@ function SalaryEditor({ rules, primaryCurrency, onChange }: SalaryEditorProps) {
   const removeRule = useCallback(async (sortedIndex: number) => {
     const rule = sortedRules[sortedIndex];
     const originalIndex = getOriginalIndex(sortedIndex);
-    const confirmed = await confirm({
+    const confirmed = await modal.open(ConfirmModal, {
       title: 'Delete Salary Period',
       message: `Are you sure you want to delete the salary period ${rule.startDate} → ${rule.endDate}? This action cannot be undone.`,
       confirmText: 'Delete',
@@ -861,7 +859,7 @@ function SalaryEditor({ rules, primaryCurrency, onChange }: SalaryEditorProps) {
       newR.splice(originalIndex, 1);
       onChangeRef.current(newR);
     }
-  }, [confirm, sortedRules, getOriginalIndex]);
+  }, [sortedRules, getOriginalIndex]);
   
   const updateRule = useCallback((sortedIndex: number, field: keyof SalaryRule, val: any) => {
     const originalIndex = getOriginalIndex(sortedIndex);
@@ -974,7 +972,6 @@ interface DescriptionsEditorProps {
 }
 
 function DescriptionsEditor({ descriptions, onChange }: DescriptionsEditorProps) {
-  const confirm = useConfirm();
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const newInputRef = useRef<HTMLInputElement>(null);
   const [focusNew, setFocusNew] = useState(false);
@@ -1013,7 +1010,7 @@ function DescriptionsEditor({ descriptions, onChange }: DescriptionsEditorProps)
   const removeDesc = useCallback(async (i: number) => {
     const desc = descriptionsRef.current[i];
     const truncatedDesc = desc.length > 50 ? desc.substring(0, 50) + '...' : desc;
-    const confirmed = await confirm({
+    const confirmed = await modal.open(ConfirmModal, {
       title: 'Delete Service Description',
       message: `Are you sure you want to delete "${truncatedDesc}"? This action cannot be undone.`,
       confirmText: 'Delete',
@@ -1026,7 +1023,7 @@ function DescriptionsEditor({ descriptions, onChange }: DescriptionsEditorProps)
       newD.splice(i, 1);
       onChangeRef.current(newD);
     }
-  }, [confirm]);
+  }, []);
 
   return (
     <div ref={setContainer} className="space-y-2">

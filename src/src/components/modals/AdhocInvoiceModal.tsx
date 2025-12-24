@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import { 
@@ -10,9 +10,10 @@ import {
   X, 
   Banknote 
 } from 'lucide-react';
-import { findOption, Select, SelectOption } from '../components/Select';
-import { DatePicker } from '../components/DatePicker';
-import { CompanyDetails } from '../types';
+import { findOption, Select, SelectOption } from '../Select';
+import { DatePicker } from '../DatePicker';
+import { CompanyDetails } from '../../types';
+import { ModalComponent, modal } from '../../contexts/ModalContext';
 
 // Re-export this type for convenience (used in Generator types too)
 export interface AdhocInvoice {
@@ -28,113 +29,38 @@ export interface AdhocInvoice {
   dueDate: string;   // ISO date string YYYY-MM-DD
 }
 
-export interface AdhocInvoiceCreateOptions {
+export interface AdhocInvoiceModalProps {
   companies: CompanyDetails[];
   primaryCurrency: string;
+  editingInvoice?: AdhocInvoice;
 }
 
-export interface AdhocInvoiceEditOptions extends AdhocInvoiceCreateOptions {
-  invoice: AdhocInvoice;
-}
-
-interface AdhocInvoiceModalContextType {
-  /**
-   * Open modal to create a new adhoc invoice.
-   * Returns the invoice data (without id) if submitted, or null if cancelled.
-   */
-  create: (options: AdhocInvoiceCreateOptions) => Promise<Omit<AdhocInvoice, 'id'> | null>;
+/**
+ * Modal for creating/editing adhoc invoices.
+ * 
+ * @example
+ * import { modal } from '../contexts/ModalContext';
+ * import { AdhocInvoiceModal } from './modals/AdhocInvoiceModal';
+ * 
+ * // Create new
+ * const result = await modal.open(AdhocInvoiceModal, { companies, primaryCurrency });
+ * 
+ * // Edit existing
+ * const result = await modal.open(AdhocInvoiceModal, { companies, primaryCurrency, editingInvoice });
+ */
+export const AdhocInvoiceModal: ModalComponent<AdhocInvoiceModalProps, Omit<AdhocInvoice, 'id'> | null> & {
+  create: (opts: { companies: CompanyDetails[]; primaryCurrency: string }) => Promise<Omit<AdhocInvoice, 'id'> | null>;
+  edit: (opts: { companies: CompanyDetails[]; primaryCurrency: string; invoice: AdhocInvoice }) => Promise<Omit<AdhocInvoice, 'id'> | null>;
+} = Object.assign(
+  (({
+    companies, 
+    primaryCurrency, 
+    editingInvoice,
+    resolve,
+  }) => {
+    const isEditMode = !!editingInvoice;
   
-  /**
-   * Open modal to edit an existing adhoc invoice.
-   * Returns the updated invoice data (without id) if submitted, or null if cancelled.
-   */
-  edit: (options: AdhocInvoiceEditOptions) => Promise<Omit<AdhocInvoice, 'id'> | null>;
-}
-
-const AdhocInvoiceModalContext = createContext<AdhocInvoiceModalContextType | null>(null);
-
-export function useAdhocInvoiceModal() {
-  const context = useContext(AdhocInvoiceModalContext);
-  if (!context) {
-    throw new Error('useAdhocInvoiceModal must be used within an AdhocInvoiceModalProvider');
-  }
-  return context;
-}
-
-interface ModalState {
-  companies: CompanyDetails[];
-  primaryCurrency: string;
-  editingInvoice: AdhocInvoice | null;
-  resolve: (result: Omit<AdhocInvoice, 'id'> | null) => void;
-}
-
-export function AdhocInvoiceModalProvider({ children }: { children: React.ReactNode }) {
-  const [modalState, setModalState] = useState<ModalState | null>(null);
-
-  const create = useCallback((options: AdhocInvoiceCreateOptions): Promise<Omit<AdhocInvoice, 'id'> | null> => {
-    return new Promise((resolve) => {
-      setModalState({
-        companies: options.companies,
-        primaryCurrency: options.primaryCurrency,
-        editingInvoice: null,
-        resolve,
-      });
-    });
-  }, []);
-
-  const edit = useCallback((options: AdhocInvoiceEditOptions): Promise<Omit<AdhocInvoice, 'id'> | null> => {
-    return new Promise((resolve) => {
-      setModalState({
-        companies: options.companies,
-        primaryCurrency: options.primaryCurrency,
-        editingInvoice: options.invoice,
-        resolve,
-      });
-    });
-  }, []);
-
-  const handleClose = useCallback((result: Omit<AdhocInvoice, 'id'> | null) => {
-    if (modalState) {
-      modalState.resolve(result);
-    }
-    setModalState(null);
-  }, [modalState]);
-
-  return (
-    <AdhocInvoiceModalContext.Provider value={{ create, edit }}>
-      {children}
-      {modalState && (
-        <AdhocInvoiceModalUI
-          companies={modalState.companies}
-          primaryCurrency={modalState.primaryCurrency}
-          editingInvoice={modalState.editingInvoice}
-          onClose={() => handleClose(null)}
-          onSubmit={(invoice) => handleClose(invoice)}
-        />
-      )}
-    </AdhocInvoiceModalContext.Provider>
-  );
-}
-
-// Internal modal UI component
-interface AdhocInvoiceModalUIProps {
-  companies: CompanyDetails[];
-  primaryCurrency: string;
-  editingInvoice: AdhocInvoice | null;
-  onClose: () => void;
-  onSubmit: (invoice: Omit<AdhocInvoice, 'id'>) => void;
-}
-
-function AdhocInvoiceModalUI({ 
-  companies, 
-  primaryCurrency, 
-  editingInvoice, 
-  onClose, 
-  onSubmit 
-}: AdhocInvoiceModalUIProps) {
-  const isEditMode = !!editingInvoice;
-  
-  // Default dates
+    // Default dates
   const today = new Date();
   const defaultIssueDate = today.toISOString().split('T')[0];
   const defaultDueDate = new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -184,7 +110,7 @@ function AdhocInvoiceModalUI({
       return;
     }
 
-    onSubmit({
+    resolve({
       name,
       invoiceNo,
       variableSymbol: variableSymbol || invoiceNo,
@@ -200,11 +126,11 @@ function AdhocInvoiceModalUI({
   // Handle escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') resolve(null);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [resolve]);
 
   // Disable body scroll
   useEffect(() => {
@@ -217,7 +143,7 @@ function AdhocInvoiceModalUI({
   return createPortal(
     <div 
       className="modal-backdrop animate-fade-in"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
+      onClick={(e) => e.target === e.currentTarget && resolve(null)}
     >
       <div 
         className="modal-content w-full max-w-lg"
@@ -252,7 +178,7 @@ function AdhocInvoiceModalUI({
             </div>
           </div>
           <button 
-            onClick={onClose}
+            onClick={() => resolve(null)}
             className="btn btn-ghost btn-icon"
             title="Close (Esc)"
           >
@@ -437,7 +363,7 @@ function AdhocInvoiceModalUI({
           >
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => resolve(null)}
               className="btn btn-secondary"
             >
               Cancel
@@ -454,4 +380,11 @@ function AdhocInvoiceModalUI({
     </div>,
     document.body
   );
-}
+  }) as ModalComponent<AdhocInvoiceModalProps, Omit<AdhocInvoice, 'id'> | null>,
+  {
+    create: (opts: { companies: CompanyDetails[]; primaryCurrency: string }): Promise<Omit<AdhocInvoice, 'id'> | null> => 
+      modal.open(AdhocInvoiceModal, opts),
+    edit: (opts: { companies: CompanyDetails[]; primaryCurrency: string; invoice: AdhocInvoice }): Promise<Omit<AdhocInvoice, 'id'> | null> => 
+      modal.open<AdhocInvoiceModalProps, Omit<AdhocInvoice, 'id'> | null>(AdhocInvoiceModal, { ...opts, editingInvoice: opts.invoice }),
+  }
+);

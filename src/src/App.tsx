@@ -8,10 +8,7 @@ import Generator, { GeneratorRef } from './components/Generator';
 import ConfigEditor, { ConfigEditorRef, SETTINGS_TABS, SettingsTabId } from './components/ConfigEditor';
 import ProjectPicker from './components/ProjectPicker';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
-import { ConfirmModalProvider } from './contexts/ConfirmModalContext';
-import { PromptModalProvider } from './contexts/PromptModalContext';
-import { PDFPreviewModalProvider } from './contexts/PDFPreviewModalContext';
-import { AdhocInvoiceModalProvider } from './contexts/AdhocInvoiceModalContext';
+import { ModalProvider } from './contexts/ModalContext';
 import { Toaster } from 'sonner';
 import { FileText, Settings, Save, Loader2, Menu, X, Home, FolderOpen } from 'lucide-react';
 import './App.css';
@@ -514,7 +511,7 @@ function App() {
   if (!activeProject || !config) {
     return (
       <ThemeProvider initialTheme={globalSettings.theme}>
-        <ConfirmModalProvider>
+        <ModalProvider>
           <ProjectPicker
             recentProjects={store.recentProjects}
             isValidating={isValidating}
@@ -524,28 +521,22 @@ function App() {
             onOpenExisting={openExistingRepository}
           />
           <ThemedToaster />
-        </ConfirmModalProvider>
+        </ModalProvider>
       </ThemeProvider>
     );
   }
 
   return (
     <ThemeProvider initialTheme={globalSettings.theme}>
-      <ConfirmModalProvider>
-        <PromptModalProvider>
-          <PDFPreviewModalProvider>
-            <AdhocInvoiceModalProvider>
-              <AppContent 
-                config={config} 
-                setConfig={handleConfigChange} 
-                taglineTriplet={taglineTriplet}
-                onCloseProject={handleCloseProject}
-              />
-              <ThemedToaster />
-            </AdhocInvoiceModalProvider>
-          </PDFPreviewModalProvider>
-        </PromptModalProvider>
-      </ConfirmModalProvider>
+      <ModalProvider>
+        <AppContent 
+          config={config} 
+          setConfig={handleConfigChange} 
+          taglineTriplet={taglineTriplet}
+          onCloseProject={handleCloseProject}
+        />
+        <ThemedToaster />
+      </ModalProvider>
     </ThemeProvider>
   );
 }

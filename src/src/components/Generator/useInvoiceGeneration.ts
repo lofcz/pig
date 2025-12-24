@@ -5,7 +5,8 @@ import { Config, CompanyDetails } from '../../types';
 import { moveProplatitFile, ensureYearFolder } from '../../utils/logic';
 import { generateInvoiceOdt, convertToPdf } from '../../utils/odt';
 import { loadGlobalSettings } from '../../utils/globalSettings';
-import { usePDFPreview } from '../../contexts/PDFPreviewModalContext';
+import { modal } from '../../contexts/ModalContext';
+import { PDFPreviewModal } from '../modals/PDFPreviewModal';
 import { InvoiceDraft, AdhocInvoice, DraftUserEdits } from './types';
 import { buildInvoiceReplacements, formatDateCzech, formatAmountCzech } from './utils';
 
@@ -40,7 +41,6 @@ export function useInvoiceGeneration({
   userEditsRef,
   setDrafts,
 }: UseInvoiceGenerationProps): UseInvoiceGenerationReturn {
-  const showPreview = usePDFPreview();
 
   const handleGenerate = useCallback(async (draft: InvoiceDraft, isPreview: boolean = false): Promise<string | undefined> => {
     const ruleset = config.rulesets.find(r => r.id === draft.rulesetId);
@@ -211,7 +211,7 @@ export function useInvoiceGeneration({
   }, [drafts, adhocInvoices, handleGenerate, handleGenerateAdhocInvoice]);
 
   const handlePreview = useCallback(async (draft: InvoiceDraft) => {
-    await showPreview({
+    await modal.open(PDFPreviewModal, {
       title: `Preview: ${draft.label}`,
       generator: async () => {
         const path = await handleGenerate(draft, true);
@@ -222,10 +222,10 @@ export function useInvoiceGeneration({
         return URL.createObjectURL(blob);
       }
     });
-  }, [handleGenerate, showPreview]);
+  }, [handleGenerate]);
 
   const handlePreviewAdhocInvoice = useCallback(async (invoice: AdhocInvoice) => {
-    await showPreview({
+    await modal.open(PDFPreviewModal, {
       title: `Preview: ${invoice.name}`,
       generator: async () => {
         const supplier = config.companies.find(c => c.id === invoice.supplierId);
@@ -272,7 +272,7 @@ export function useInvoiceGeneration({
         return URL.createObjectURL(blob);
       }
     });
-  }, [config, showPreview]);
+  }, [config]);
 
   return {
     handleGenerate,
