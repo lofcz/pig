@@ -1177,6 +1177,9 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
   const totalDraftValue = drafts.reduce((sum, d) => sum + d.amount, 0);
   const adhocTotalValue = adhocInvoices.reduce((sum, inv) => sum + inv.value, 0);
 
+  // Helper to check if there are any invoices ready for generation
+  const hasActiveInvoices = drafts.length > 0 || adhocInvoices.length > 0;
+
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8">
       {showPageLoading ? (
@@ -1212,58 +1215,62 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
             className="text-sm"
             style={{ color: 'var(--text-muted)' }}
           >
-            {drafts.length + adhocInvoices.length > 0 
+            {hasActiveInvoices 
               ? `${drafts.length + adhocInvoices.length} invoice${drafts.length + adhocInvoices.length !== 1 ? 's' : ''} ready for generation`
               : 'No pending invoices at this time'
             }
           </p>
         </div>
 
-        {drafts.length > 0 && (
-          <div className="flex items-center gap-3">
-            {/* Add Adhoc Invoice Button */}
-            <button
-              onClick={() => {
-                setEditingAdhocInvoice(null);
-                setAdhocModalOpen(true);
-              }}
-              className="btn btn-ghost btn-icon"
-              style={{ color: 'var(--text-muted)' }}
-              title="Add custom invoice"
-            >
-              <Plus size={20} />
-            </button>
+        <div className="flex items-center gap-3">
+          {/* Add Adhoc Invoice Button */}
+          <button
+            onClick={() => {
+              setEditingAdhocInvoice(null);
+              setAdhocModalOpen(true);
+            }}
+            className="btn btn-ghost btn-icon"
+            style={{ color: 'var(--text-muted)' }}
+            title="Add custom invoice"
+          >
+            <Plus size={20} />
+          </button>
 
-            {/* Total Summary */}
-            <div 
-              className="card px-4 py-3 flex items-center gap-3"
-              style={{ backgroundColor: 'var(--accent-50)' }}
-            >
+          {drafts.length > 0 && (
+            <>
+              {/* Total Summary */}
               <div 
-                className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
-                style={{ backgroundColor: 'var(--accent-100)' }}
+                className="card px-4 py-3 flex items-center gap-3"
+                style={{ backgroundColor: 'var(--accent-50)' }}
               >
-                <Banknote size={20} style={{ color: 'var(--accent-600)' }} />
+                <div 
+                  className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                  style={{ backgroundColor: 'var(--accent-100)' }}
+                >
+                  <Banknote size={20} style={{ color: 'var(--accent-600)' }} />
+                </div>
+                <div>
+                  <p className="text-xs font-medium" style={{ color: 'var(--accent-600)' }}>Total Value</p>
+                  <p className="text-lg font-bold font-mono" style={{ color: 'var(--accent-700)' }}>
+                    <NumberFlow 
+                      value={totalDraftValue} 
+                      format={{ useGrouping: true }}
+                      suffix={` ${config.primaryCurrency}`}
+                    />
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-medium" style={{ color: 'var(--accent-600)' }}>Total Value</p>
-                <p className="text-lg font-bold font-mono" style={{ color: 'var(--accent-700)' }}>
-                  <NumberFlow 
-                    value={totalDraftValue} 
-                    format={{ useGrouping: true }}
-                    suffix={` ${config.primaryCurrency}`}
-                  />
-                </p>
-              </div>
-            </div>
+            </>
+          )}
 
-            {/* Generate All Button */}
+          {/* Generate All Button - show when there are any invoices (regular or adhoc) */}
+          {hasActiveInvoices && (
             <CauldronButton onClick={openGenerateAllModal}>
               <Sparkles size={18} className="flex-shrink-0" />
               <span>Generate All</span>
             </CauldronButton>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Billing Period Badge */}
@@ -1484,7 +1491,7 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
 
         {/* Invoice Drafts */}
         <div className="space-y-4">
-          {drafts.length === 0 && (
+          {!hasActiveInvoices && (
             <div className="card p-12 flex flex-col items-center justify-center text-center">
               <div
                 className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
