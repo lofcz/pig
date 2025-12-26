@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { getVersion } from '@tauri-apps/api/app';
 import { loadConfigFromPath, saveConfig } from './utils/config';
 import { loadSmtpCredentials } from './utils/smtpCredentials';
 import { loadGlobalSettings, saveGlobalSettings, GlobalSettings } from './utils/globalSettings';
@@ -50,12 +51,18 @@ function AppContent({
 }) {
   const [showSettings, setShowSettings] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [appVersion, setAppVersion] = useState('');
   const scrollPosRef = useRef(0);
   const settingsScrollPosRef = useRef(0);
   const configEditorRef = useRef<ConfigEditorRef>(null);
   const generatorRef = useRef<GeneratorRef>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
+
+  // Fetch app version on mount
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => setAppVersion('?.?.?'));
+  }, []);
 
   // Close mobile menu on escape key
   useEffect(() => {
@@ -355,7 +362,7 @@ function AppContent({
             className="text-sm"
             style={{ color: 'var(--text-subtle)' }}
           >
-            PIG v0.1.0
+            PIG v{appVersion}{import.meta.env.DEV ? ' [dev]' : ''}
           </p>
         </div>
       </footer>
