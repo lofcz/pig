@@ -1,5 +1,15 @@
 #!/bin/sh
 cd src
-node ./node_modules/typescript/bin/tsc --noEmit
-cd src-tauri
-cargo check
+node ./node_modules/typescript/bin/tsc --noEmit &
+pid1=$!
+(cd src-tauri && cargo check) &
+pid2=$!
+
+wait $pid1
+result1=$?
+wait $pid2
+result2=$?
+
+if [ $result1 -ne 0 ] || [ $result2 -ne 0 ]; then
+  exit 1
+fi
