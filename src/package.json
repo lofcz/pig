@@ -49,12 +49,14 @@
     "zod": "^4.2.1"
   },
   "devDependencies": {
+    "@babel/preset-react": "^7.28.5",
     "@tailwindcss/postcss": "^4.1.18",
     "@tauri-apps/cli": "^2",
     "@types/js-beautify": "^1.14.3",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "@welldone-software/why-did-you-render": "^10.0.1",
     "autoprefixer": "^10.4.23",
     "husky": "^9.1.7",
     "png-to-ico": "^3.0.1",

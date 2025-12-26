@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { 
   Sparkles, 
   CheckCircle2, 
@@ -20,8 +21,19 @@ export default function GeneratingPhase({
   fakeProgress,
   primaryCurrency,
 }: GeneratingPhaseProps) {
+  const listRef = useRef<HTMLDivElement>(null);
   const completedCount = statuses.filter(s => s.status === 'done').length;
   const totalCount = invoices.length;
+
+  // Auto-scroll to active item
+  useEffect(() => {
+    if (listRef.current) {
+      const activeItem = listRef.current.querySelector('.generate-all-item.active');
+      if (activeItem) {
+        activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+  }, [statuses]);
 
   return (
     <div className="generate-all-generating">
@@ -51,7 +63,7 @@ export default function GeneratingPhase({
         </span>
       </div>
 
-      <div className="generate-all-list">
+      <div className="generate-all-list" ref={listRef}>
         {invoices.map((invoice) => {
           const status = statuses.find(s => s.id === invoice.id);
           const isActive = status?.status === 'generating';

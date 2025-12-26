@@ -84,7 +84,6 @@ interface CompanyCardProps {
 }
 
 function CompanyCard({ company, contacts, emailTemplates, emailConnectors, onUpdate, onRemove }: CompanyCardProps) {
-  // Use refs for all inputs - completely bypasses React rendering on keystroke
   const nameRef = useRef<HTMLInputElement>(null);
   const streetRef = useRef<HTMLInputElement>(null);
   const cityRef = useRef<HTMLInputElement>(null);
