@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <!-- Main gradient for the pig -->
+    <linearGradient id="pigGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFB6C1"/>
+      <stop offset="50%" style="stop-color:#FF8FAB"/>
+      <stop offset="100%" style="stop-color:#E75480"/>
+    </linearGradient>
+    
+    <!-- Lighter pink for highlights -->
+    <linearGradient id="pigHighlight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFD1DC"/>
+      <stop offset="100%" style="stop-color:#FFB6C1"/>
+    </linearGradient>
+    
+    <!-- Nose gradient -->
+    <linearGradient id="noseGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#E75480"/>
+      <stop offset="100%" style="stop-color:#C41E54"/>
+    </linearGradient>
+    
+    <!-- Document gradient -->
+    <linearGradient id="docGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFFFFF"/>
+      <stop offset="100%" style="stop-color:#F0F0F0"/>
+    </linearGradient>
+    
+    <!-- Shadow -->
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+    
+    <!-- Soft inner shadow for depth -->
+    <filter id="innerGlow">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3" result="blur"/>
+      <feOffset in="blur" dx="2" dy="2" result="offsetBlur"/>
+      <feComposite in="SourceGraphic" in2="offsetBlur" operator="over"/>
+    </filter>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="240" fill="url(#pigGradient)" filter="url(#shadow)"/>
+  
+  <!-- Inner highlight circle for 3D effect -->
+  <ellipse cx="220" cy="180" rx="120" ry="80" fill="url(#pigHighlight)" opacity="0.4"/>
+  
+  <!-- Left ear -->
+  <ellipse cx="120" cy="120" rx="55" ry="65" fill="url(#pigGradient)" transform="rotate(-25 120 120)"/>
+  <ellipse cx="120" cy="120" rx="35" ry="45" fill="url(#pigHighlight)" transform="rotate(-25 120 120)" opacity="0.6"/>
+  
+  <!-- Right ear -->
+  <ellipse cx="392" cy="120" rx="55" ry="65" fill="url(#pigGradient)" transform="rotate(25 392 120)"/>
+  <ellipse cx="392" cy="120" rx="35" ry="45" fill="url(#pigHighlight)" transform="rotate(25 392 120)" opacity="0.6"/>
+  
+  <!-- Snout/nose base -->
+  <ellipse cx="256" cy="320" rx="85" ry="60" fill="url(#noseGradient)"/>
+  
+  <!-- Snout highlight -->
+  <ellipse cx="256" cy="305" rx="70" ry="40" fill="url(#pigHighlight)" opacity="0.3"/>
+  
+  <!-- Nostrils -->
+  <ellipse cx="225" cy="325" rx="18" ry="22" fill="#8B1A4A"/>
+  <ellipse cx="287" cy="325" rx="18" ry="22" fill="#8B1A4A"/>
+  
+  <!-- Left eye -->
+  <ellipse cx="175" cy="220" rx="35" ry="40" fill="#FFFFFF"/>
+  <circle cx="180" cy="225" r="20" fill="#2D2D2D"/>
+  <circle cx="186" cy="218" r="8" fill="#FFFFFF"/>
+  
+  <!-- Right eye -->
+  <ellipse cx="337" cy="220" rx="35" ry="40" fill="#FFFFFF"/>
+  <circle cx="332" cy="225" r="20" fill="#2D2D2D"/>
+  <circle cx="338" cy="218" r="8" fill="#FFFFFF"/>
+  
+  <!-- Eyebrows for friendly expression -->
+  <path d="M140 185 Q175 175 200 190" stroke="#C41E54" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M372 185 Q337 175 312 190" stroke="#C41E54" stroke-width="6" fill="none" stroke-linecap="round"/>
+  
+  <!-- Cheek blush left -->
+  <ellipse cx="115" cy="280" rx="35" ry="25" fill="#FF6B8A" opacity="0.4"/>
+  
+  <!-- Cheek blush right -->
+  <ellipse cx="397" cy="280" rx="35" ry="25" fill="#FF6B8A" opacity="0.4"/>
+  
+  <!-- Small invoice/document in corner -->
+  <g transform="translate(350, 350) rotate(15)">
+    <!-- Document shadow -->
+    <rect x="2" y="2" width="90" height="110" rx="6" fill="#000000" opacity="0.2"/>
+    
+    <!-- Document body -->
+    <rect x="0" y="0" width="90" height="110" rx="6" fill="url(#docGradient)" stroke="#E0E0E0" stroke-width="2"/>
+    
+    <!-- Document lines -->
+    <line x1="12" y1="20" x2="78" y2="20" stroke="#4CAF50" stroke-width="4" stroke-linecap="round"/>
+    <line x1="12" y1="35" x2="65" y2="35" stroke="#BDBDBD" stroke-width="3" stroke-linecap="round"/>
+    <line x1="12" y1="48" x2="70" y2="48" stroke="#BDBDBD" stroke-width="3" stroke-linecap="round"/>
+    <line x1="12" y1="61" x2="55" y2="61" stroke="#BDBDBD" stroke-width="3" stroke-linecap="round"/>
+    
+    <!-- Dollar sign -->
+    <text x="45" y="95" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#4CAF50" text-anchor="middle">$</text>
+  </g>
+  
+  <!-- Smile -->
+  <path d="M200 380 Q256 420 312 380" stroke="#C41E54" stroke-width="6" fill="none" stroke-linecap="round"/>
+</svg>
