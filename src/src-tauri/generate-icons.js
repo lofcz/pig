@@ -42,18 +42,25 @@ async function generateIcons() {
     { name: 'StoreLogo.png', size: 50 },
   ];
 
-  // Generate PNG files with high quality settings
+  // Generate PNG files with high quality settings - RGBA with transparent background
   for (const { name, size } of sizes) {
     const outputPath = path.join(iconsDir, name);
     // Render at 4x size then downscale for better quality
     const renderSize = Math.min(size * 4, 2048);
     await sharp(svgBuffer, { density: 300 })
-      .resize(renderSize, renderSize)
+      .resize(renderSize, renderSize, {
+        fit: 'contain',
+        background: { r: 0, g: 0, b: 0, alpha: 0 }
+      })
       .resize(size, size, { 
         kernel: sharp.kernel.lanczos3,
-        fit: 'contain'
+        fit: 'contain',
+        background: { r: 0, g: 0, b: 0, alpha: 0 }
       })
-      .png({ quality: 100, compressionLevel: 9 })
+      .toFormat('png', { 
+        compressionLevel: 9,
+        palette: false  // Disable palette to ensure RGBA
+      })
       .toFile(outputPath);
     console.log(`Generated: ${name} (${size}x${size})`);
   }
@@ -65,9 +72,16 @@ async function generateIcons() {
   for (const size of icoSizes) {
     // Render at much higher resolution then downscale for crisp results
     const pngBuffer = await sharp(svgBuffer, { density: 400 })
-      .resize(1024, 1024)
-      .resize(size, size, { kernel: sharp.kernel.lanczos3 })
-      .png()
+      .resize(1024, 1024, {
+        fit: 'contain',
+        background: { r: 0, g: 0, b: 0, alpha: 0 }
+      })
+      .resize(size, size, { 
+        kernel: sharp.kernel.lanczos3,
+        fit: 'contain',
+        background: { r: 0, g: 0, b: 0, alpha: 0 }
+      })
+      .toFormat('png', { palette: false })
       .toBuffer();
     icoPngs.push(pngBuffer);
   }
@@ -79,8 +93,12 @@ async function generateIcons() {
   // Generate ICNS file (macOS)
   console.log('Generating icon.icns...');
   const pngForIcns = await sharp(svgBuffer, { density: 300 })
-    .resize(1024, 1024, { kernel: sharp.kernel.lanczos3 })
-    .png()
+    .resize(1024, 1024, { 
+      kernel: sharp.kernel.lanczos3,
+      fit: 'contain',
+      background: { r: 0, g: 0, b: 0, alpha: 0 }
+    })
+    .toFormat('png', { palette: false })
     .toBuffer();
   
   const icnsBuffer = png2icons.createICNS(pngForIcns, png2icons.BICUBIC2, 0);
