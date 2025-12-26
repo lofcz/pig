@@ -171,6 +171,23 @@ jobs:
           projectPath: src
           args: --target ${{ matrix.target }}
 
+      - name: Create Windows portable zip
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $version = "${{ needs.version-bump.outputs.version }}"
+          $exePath = "src/src-tauri/target/${{ matrix.target }}/release/pig.exe"
+          $zipName = "pig_${version}_x64-portable.zip"
+          $zipPath = "src/src-tauri/target/${{ matrix.target }}/release/bundle/$zipName"
+          
+          if (Test-Path $exePath) {
+            Compress-Archive -Path $exePath -DestinationPath $zipPath -Force
+            Write-Host "Created portable zip: $zipPath"
+          } else {
+            Write-Error "Executable not found at $exePath"
+            exit 1
+          }
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -223,6 +240,7 @@ jobs:
           if [ -d "artifacts/binaries-x86_64-pc-windows-msvc" ]; then
             find artifacts/binaries-x86_64-pc-windows-msvc -name "*.msi" -exec cp {} release-assets/ \;
             find artifacts/binaries-x86_64-pc-windows-msvc -name "*.exe" -exec cp {} release-assets/ \; 2>/dev/null || true
+            find artifacts/binaries-x86_64-pc-windows-msvc -name "*portable.zip" -exec cp {} release-assets/ \; 2>/dev/null || true
           fi
           
           echo "Release assets:"
