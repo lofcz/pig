@@ -33,6 +33,7 @@ jobs:
       contents: write
     outputs:
       version: ${{ steps.bump.outputs.version }}
+      sha: ${{ steps.commit.outputs.sha }}
     
     steps:
       - name: Checkout repository
@@ -104,10 +105,9 @@ jobs:
           git commit -m "chore: bump version to ${{ steps.bump.outputs.version }}"
           git push
 
-      - name: Create and push tag
-        run: |
-          git tag "v${{ steps.bump.outputs.version }}"
-          git push origin "v${{ steps.bump.outputs.version }}"
+      - name: Output commit SHA
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
   build:
     needs: version-bump
@@ -130,7 +130,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: v${{ needs.version-bump.outputs.version }}
+          ref: ${{ needs.version-bump.outputs.sha }}
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -206,7 +206,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: v${{ needs.version-bump.outputs.version }}
+          ref: ${{ needs.version-bump.outputs.sha }}
+
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "v${{ needs.version-bump.outputs.version }}"
+          git push origin "v${{ needs.version-bump.outputs.version }}"
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
