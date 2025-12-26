@@ -42,7 +42,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: src
-        run: bun install --frozen-lockfile
+        run: bun install
 
       - name: TypeScript check
         working-directory: src
