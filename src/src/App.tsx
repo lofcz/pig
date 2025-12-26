@@ -3,7 +3,7 @@ import { loadConfigFromPath, saveConfig } from './utils/config';
 import { loadSmtpCredentials } from './utils/smtpCredentials';
 import { loadGlobalSettings, saveGlobalSettings, GlobalSettings } from './utils/globalSettings';
 import { Config } from './types';
-import { useProjectStore } from './hooks/useProjectStore';
+import { useProjectStore } from './hooks';
 import Generator, { GeneratorRef } from './components/Generator';
 import ConfigEditor, { ConfigEditorRef, SETTINGS_TABS, SettingsTabId } from './components/ConfigEditor';
 import ProjectPicker from './components/ProjectPicker';

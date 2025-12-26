@@ -1,10 +1,20 @@
-import { readDir, exists, rename, mkdir } from '@tauri-apps/plugin-fs';
+import { readDir, exists, rename, mkdir, stat } from '@tauri-apps/plugin-fs';
 import { join } from '@tauri-apps/api/path';
 import { ProjectStructure, DEFAULT_PROJECT_STRUCTURE } from '../types';
 
 export interface FileEntry {
   name: string;
   path: string; // Full path
+}
+
+/**
+ * Extended file entry with metadata for change detection
+ */
+export interface FileEntryWithMetadata extends FileEntry {
+  /** File size in bytes */
+  size: number;
+  /** File modification time as ISO string */
+  mtime: string;
 }
 
 /**
@@ -22,6 +32,54 @@ export async function getProplatitFiles(
       return entries
         .filter(e => e.isFile && e.name.toLowerCase().endsWith('.pdf'))
         .map(e => ({ name: e.name, path: `${pendingPath}\\${e.name}` }));
+    }
+  } catch (e) {
+    console.error("Error scanning reimburse pending folder:", e);
+  }
+  return [];
+}
+
+/**
+ * Get files from the reimburse pending folder with metadata for change detection.
+ * Returns file entries with size and modification time.
+ */
+export async function getProplatitFilesWithMetadata(
+  rootPath: string, 
+  structure: ProjectStructure = DEFAULT_PROJECT_STRUCTURE
+): Promise<FileEntryWithMetadata[]> {
+  try {
+    const pendingPath = await join(rootPath, structure.reimbursePendingFolder);
+    
+    if (await exists(pendingPath)) {
+      const entries = await readDir(pendingPath);
+      const pdfEntries = entries.filter(e => e.isFile && e.name.toLowerCase().endsWith('.pdf'));
+      
+      // Get metadata for each file in parallel
+      const filesWithMetadata = await Promise.all(
+        pdfEntries.map(async (e) => {
+          const filePath = `${pendingPath}\\${e.name}`;
+          try {
+            const fileInfo = await stat(filePath);
+            return {
+              name: e.name,
+              path: filePath,
+              size: fileInfo.size,
+              mtime: fileInfo.mtime?.toISOString() ?? '',
+            };
+          } catch (err) {
+            console.warn(`Failed to get metadata for ${filePath}:`, err);
+            // Return with empty metadata on error - will be treated as changed file
+            return {
+              name: e.name,
+              path: filePath,
+              size: 0,
+              mtime: '',
+            };
+          }
+        })
+      );
+      
+      return filesWithMetadata;
     }
   } catch (e) {
     console.error("Error scanning reimburse pending folder:", e);

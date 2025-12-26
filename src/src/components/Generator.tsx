@@ -50,6 +50,9 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
   // Used to decide whether an override is "effective" - the override replaces this period's
   // own salary contribution while preserving carryover from prior periods.
   const computedBaseTotalsRef = useRef<Map<string, number>>(new Map());
+  
+  // Track if initial invoice load has completed (to avoid flashing on refresh)
+  const initialInvoiceLoadDoneRef = useRef(false);
 
   // Manual refresh state
   const [refreshing, setRefreshing] = useState(false);
@@ -64,7 +67,9 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
     loadFiles: loadProplatitFiles,
     updateItem: updateProplatitItem,
     totalValue: proplatitTotalValue,
-    selectedFiles: selectedProplatitFiles
+    selectedFiles: selectedProplatitFiles,
+    pauseWatching,
+    resumeWatching,
   } = useProplatitFiles({
     rootPath: config.rootPath,
     primaryCurrency: config.primaryCurrency,
@@ -131,10 +136,17 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
 
   // Reusable function to reload the last invoiced month from disk
   const reloadLastInvoicedMonth = useCallback(async () => {
-    setLastInvoicedMonthLoading(true);
+    // Only show loading on initial load (to avoid UI flash on refresh)
+    const isInitialLoad = !initialInvoiceLoadDoneRef.current;
+    if (isInitialLoad) {
+      setLastInvoicedMonthLoading(true);
+    }
+    
     const yStr = currentDate.getFullYear().toString().slice(-2);
     const lastM = await getLastInvoicedMonth(config.rootPath, yStr, config.projectStructure);
     setLastInvoicedMonth(lastM);
+    
+    initialInvoiceLoadDoneRef.current = true;
     setLastInvoicedMonthLoading(false);
   }, [config.rootPath, config.projectStructure, currentDate]);
 
@@ -200,7 +212,9 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
       loadProplatitFiles(),
       reloadLastInvoicedMonth()
     ]);
-  }, [clearAdhocInvoices, loadProplatitFiles, reloadLastInvoicedMonth]);
+    // Resume file watching after reloading (was paused during generation)
+    resumeWatching();
+  }, [clearAdhocInvoices, loadProplatitFiles, reloadLastInvoicedMonth, resumeWatching]);
 
   // Build invoice snapshots for Generate All modal
   const buildInvoiceSnapshots = useCallback(() => {
@@ -262,6 +276,8 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
 
   // Handler to open Generate All modal using context
   const openGenerateAllModal = useCallback(async () => {
+    // Pause file watching during generation to avoid interference from our own file operations
+    pauseWatching();
     await modal.open(GenerateAllModalComponent, {
       config,
       invoices: buildInvoiceSnapshots(),
@@ -271,7 +287,7 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
       onGenerateInvoice: handleGenerateById,
       onComplete: handleGenerateAllComplete,
     });
-  }, [config, buildInvoiceSnapshots, buildExtraFilesSnapshots, handleGenerateById, handleGenerateAllComplete]);
+  }, [config, buildInvoiceSnapshots, buildExtraFilesSnapshots, handleGenerateById, handleGenerateAllComplete, pauseWatching]);
 
   // Draft update handler for child components
   const handleUpdateDraft = useCallback((index: number, updates: Partial<InvoiceDraft>) => {
@@ -329,6 +345,8 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
           analysisProgress={analysisProgress}
           analyzingIndices={analyzingIndices}
           onAnalyze={handleAnalyzeExtraItems}
+          rootPath={config.rootPath}
+          projectStructure={config.projectStructure}
         />
 
         <AdhocInvoicesList

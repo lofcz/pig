@@ -1,14 +1,17 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import NumberFlow from '@number-flow/react';
 import { 
   ChevronDown,
   Package,
   Wand2,
-  Loader2
+  Loader2,
+  FolderOpen
 } from 'lucide-react';
+import { openPath } from '@tauri-apps/plugin-opener';
+import { join } from '@tauri-apps/api/path';
 import ExtraItemsList from '../ExtraItemsList';
 import { AnalysisProgress } from '../../utils/analyzeExtraItems';
-import { Currency } from '../../types';
+import { Currency, ProjectStructure, DEFAULT_PROJECT_STRUCTURE } from '../../types';
 import { ProplatitItem } from '../../hooks/useProplatitFiles';
 
 interface ExtraItemsSectionProps {
@@ -21,6 +24,8 @@ interface ExtraItemsSectionProps {
   analysisProgress: AnalysisProgress | null;
   analyzingIndices: Set<number>;
   onAnalyze: () => void;
+  rootPath: string;
+  projectStructure?: ProjectStructure;
 }
 
 export function ExtraItemsSection({
@@ -32,9 +37,20 @@ export function ExtraItemsSection({
   analyzing,
   analysisProgress,
   analyzingIndices,
-  onAnalyze
+  onAnalyze,
+  rootPath,
+  projectStructure = DEFAULT_PROJECT_STRUCTURE,
 }: ExtraItemsSectionProps) {
   const [expanded, setExpanded] = useState(true);
+
+  const handleOpenFolder = useCallback(async () => {
+    try {
+      const folderPath = await join(rootPath, projectStructure.reimbursePendingFolder);
+      await openPath(folderPath);
+    } catch (err) {
+      console.error('Failed to open folder:', err);
+    }
+  }, [rootPath, projectStructure.reimbursePendingFolder]);
 
   if (items.length === 0) return null;
 
@@ -66,6 +82,15 @@ export function ExtraItemsSection({
           </span>
         </button>
         <div className="flex items-center gap-4">
+          {/* Open Folder Button */}
+          <button
+            onClick={handleOpenFolder}
+            className="btn btn-secondary btn-sm flex items-center gap-2"
+            title="Open extra items folder"
+          >
+            <FolderOpen size={14} />
+            <span>Open</span>
+          </button>
           {/* Analyze Button */}
           {canAnalyze && items.length > 0 && (
             <button

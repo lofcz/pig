@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit",
-    "prepare": "cd .. && husky src/.husky && git config core.hooksPath src/.husky"
+    "prepare": "cd .. && bunx husky src/.husky && git config core.hooksPath src/.husky"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",

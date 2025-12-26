@@ -24,6 +24,7 @@
     "fs:allow-rename",
     "fs:allow-stat",
     "fs:allow-read",
+    "fs:allow-watch",
     "shell:allow-execute",
     {
       "identifier": "shell:allow-execute",
