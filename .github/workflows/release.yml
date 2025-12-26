@@ -27,26 +27,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  version-bump:
+  calculate-version:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     outputs:
       version: ${{ steps.bump.outputs.version }}
-      sha: ${{ steps.commit.outputs.sha }}
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Bump version
+      - name: Calculate new version
         id: bump
         run: |
           # Get current version from package.json
@@ -75,42 +65,9 @@ jobs:
           NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
           echo "New version: $NEW_VERSION"
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          
-          # Update package.json
-          node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('src/package.json', 'utf8'));
-            pkg.version = '$NEW_VERSION';
-            fs.writeFileSync('src/package.json', JSON.stringify(pkg, null, 2) + '\n');
-          "
-          
-          # Update tauri.conf.json
-          node -e "
-            const fs = require('fs');
-            const conf = JSON.parse(fs.readFileSync('src/src-tauri/tauri.conf.json', 'utf8'));
-            conf.version = '$NEW_VERSION';
-            fs.writeFileSync('src/src-tauri/tauri.conf.json', JSON.stringify(conf, null, 2) + '\n');
-          "
-          
-          # Update Cargo.toml
-          sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" src/src-tauri/Cargo.toml
-          
-          echo "Updated all version files to $NEW_VERSION"
-
-      - name: Commit and push version bump
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add src/package.json src/src-tauri/tauri.conf.json src/src-tauri/Cargo.toml
-          git commit -m "chore: bump version to ${{ steps.bump.outputs.version }}"
-          git push
-
-      - name: Output commit SHA
-        id: commit
-        run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
   build:
-    needs: version-bump
+    needs: calculate-version
     strategy:
       fail-fast: false
       matrix:
@@ -129,8 +86,33 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.version-bump.outputs.sha }}
+
+      - name: Update version files
+        shell: bash
+        run: |
+          NEW_VERSION="${{ needs.calculate-version.outputs.version }}"
+          
+          # Update package.json
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('src/package.json', 'utf8'));
+            pkg.version = '$NEW_VERSION';
+            fs.writeFileSync('src/package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          
+          # Update tauri.conf.json
+          node -e "
+            const fs = require('fs');
+            const conf = JSON.parse(fs.readFileSync('src/src-tauri/tauri.conf.json', 'utf8'));
+            conf.version = '$NEW_VERSION';
+            fs.writeFileSync('src/src-tauri/tauri.conf.json', JSON.stringify(conf, null, 2) + '\n');
+          "
+          
+          # Update Cargo.toml
+          sed -i.bak "s/^version = \".*\"/version = \"$NEW_VERSION\"/" src/src-tauri/Cargo.toml
+          rm -f src/src-tauri/Cargo.toml.bak
+          
+          echo "Updated all version files to $NEW_VERSION"
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -175,7 +157,7 @@ jobs:
         if: matrix.platform == 'windows-latest'
         shell: pwsh
         run: |
-          $version = "${{ needs.version-bump.outputs.version }}"
+          $version = "${{ needs.calculate-version.outputs.version }}"
           $exePath = "src/src-tauri/target/${{ matrix.target }}/release/pig.exe"
           $zipName = "pig_${version}_x64-portable.zip"
           $zipPath = "src/src-tauri/target/${{ matrix.target }}/release/bundle/$zipName"
@@ -197,7 +179,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: [version-bump, build]
+    needs: [calculate-version, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -206,14 +188,41 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.version-bump.outputs.sha }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit version bump
+        run: |
+          NEW_VERSION="${{ needs.calculate-version.outputs.version }}"
+          
+          # Update package.json
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('src/package.json', 'utf8'));
+            pkg.version = '$NEW_VERSION';
+            fs.writeFileSync('src/package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          
+          # Update tauri.conf.json
+          node -e "
+            const fs = require('fs');
+            const conf = JSON.parse(fs.readFileSync('src/src-tauri/tauri.conf.json', 'utf8'));
+            conf.version = '$NEW_VERSION';
+            fs.writeFileSync('src/src-tauri/tauri.conf.json', JSON.stringify(conf, null, 2) + '\n');
+          "
+          
+          # Update Cargo.toml
+          sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" src/src-tauri/Cargo.toml
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/package.json src/src-tauri/tauri.conf.json src/src-tauri/Cargo.toml
+          git commit -m "chore: bump version to $NEW_VERSION"
+          git push
 
       - name: Create and push tag
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "v${{ needs.version-bump.outputs.version }}"
-          git push origin "v${{ needs.version-bump.outputs.version }}"
+          git tag "v${{ needs.calculate-version.outputs.version }}"
+          git push origin "v${{ needs.calculate-version.outputs.version }}"
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -256,8 +265,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ needs.version-bump.outputs.version }}
-          name: PIG v${{ needs.version-bump.outputs.version }}
+          tag_name: v${{ needs.calculate-version.outputs.version }}
+          name: PIG v${{ needs.calculate-version.outputs.version }}
           draft: ${{ inputs.draft }}
           prerelease: ${{ inputs.prerelease }}
           generate_release_notes: true
