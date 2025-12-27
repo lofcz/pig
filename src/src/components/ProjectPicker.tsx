@@ -18,6 +18,7 @@ import {
   ArrowRight,
   Loader2,
   FolderPlus,
+  FolderSearch,
 } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { RecentProject, ProjectStructure } from '../types/project';
@@ -31,6 +32,7 @@ interface ProjectPickerProps {
   onRemoveProject: (projectId: string) => void;
   onCreateProject: (path: string, name: string, structure: ProjectStructure) => Promise<void>;
   onOpenExisting: (path: string) => Promise<{ success: boolean; error?: string }>;
+  onRelocateProject?: (projectId: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 export function ProjectPicker({
@@ -40,6 +42,7 @@ export function ProjectPicker({
   onRemoveProject,
   onCreateProject,
   onOpenExisting,
+  onRelocateProject,
 }: ProjectPickerProps) {
   const [isOpening, setIsOpening] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -210,6 +213,7 @@ export function ProjectPicker({
                   project={project}
                   onOpen={() => onOpenProject(project)}
                   onRemove={() => onRemoveProject(project.id)}
+                  onRelocate={onRelocateProject ? () => onRelocateProject(project.id) : undefined}
                   formatDate={formatDate}
                 />
               ))}
@@ -263,12 +267,24 @@ interface ProjectItemProps {
   project: RecentProject;
   onOpen: () => void;
   onRemove: () => void;
+  onRelocate?: () => Promise<{ success: boolean; error?: string }>;
   formatDate: (date: string) => string;
 }
 
-function ProjectItem({ project, onOpen, onRemove, formatDate }: ProjectItemProps) {
+function ProjectItem({ project, onOpen, onRemove, onRelocate, formatDate }: ProjectItemProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const [isRelocating, setIsRelocating] = useState(false);
   const isInvalid = project.isValid === false;
+
+  const handleRelocate = async () => {
+    if (!onRelocate || isRelocating) return;
+    setIsRelocating(true);
+    try {
+      await onRelocate();
+    } finally {
+      setIsRelocating(false);
+    }
+  };
 
   return (
     <div
@@ -326,7 +342,7 @@ function ProjectItem({ project, onOpen, onRemove, formatDate }: ProjectItemProps
             className="text-xs mt-0.5"
             style={{ color: 'var(--error-500)' }}
           >
-            Path no longer exists or is not a valid PIG repository
+            Path no longer exists — hover to relocate or remove
           </p>
         )}
       </div>
@@ -352,6 +368,21 @@ function ProjectItem({ project, onOpen, onRemove, formatDate }: ProjectItemProps
             title="Open project"
           >
             <ArrowRight size={18} />
+          </button>
+        )}
+        {isInvalid && onRelocate && (
+          <button
+            onClick={handleRelocate}
+            disabled={isRelocating}
+            className="p-2 rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: 'var(--accent-500)' }}
+            title="Relocate project"
+          >
+            {isRelocating ? (
+              <Loader2 size={18} className="animate-spin" />
+            ) : (
+              <FolderSearch size={18} />
+            )}
           </button>
         )}
         <button

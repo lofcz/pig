@@ -44,7 +44,7 @@ export async function validateRepository(rootPath: string): Promise<RepositoryVa
         hasPigFolder,
         hasConfig: false,
         isGitRepo: await checkIsGitRepo(rootPath),
-        error: 'Not a PIG repository: cfg.json not found',
+        error: 'Not a PIG repository',
       };
     }
     

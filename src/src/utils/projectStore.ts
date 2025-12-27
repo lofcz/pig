@@ -171,6 +171,33 @@ export function updateProjectName(store: ProjectStore, projectId: string, newNam
 }
 
 /**
+ * Update a project's path in the store (relocate)
+ */
+export function updateProjectPath(
+  store: ProjectStore, 
+  projectId: string, 
+  newPath: string,
+  isGitRepo?: boolean
+): ProjectStore {
+  const recentProjects = store.recentProjects.map(p => 
+    p.id === projectId 
+      ? { 
+          ...p, 
+          path: newPath, 
+          isValid: true,
+          isGitRepo: isGitRepo ?? p.isGitRepo,
+          lastOpened: new Date().toISOString(),
+        } 
+      : p
+  );
+  
+  return {
+    ...store,
+    recentProjects,
+  };
+}
+
+/**
  * Hook-friendly wrapper for project store operations
  */
 export class ProjectStoreManager {

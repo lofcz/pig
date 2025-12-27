@@ -2791,3 +2791,44 @@ input[type="password"]::-webkit-clear-button {
     transform: scale(1.1);
   }
 }
+
+/* ============================================
+   Toast Notifications (Sonner)
+   ============================================ */
+/* Dark theme toasts */
+.toast-success-dark {
+  background: #0f2a1a !important;
+  border-color: #166534 !important;
+  color: #4ade80 !important;
+}
+.toast-success-dark svg {
+  color: #4ade80 !important;
+}
+
+.toast-error-dark {
+  background: #2a0f0f !important;
+  border-color: #7f1d1d !important;
+  color: #fca5a5 !important;
+}
+.toast-error-dark svg {
+  color: #f87171 !important;
+}
+
+/* Light theme toasts */
+.toast-success-light {
+  background: #f0fdf4 !important;
+  border-color: #86efac !important;
+  color: #166534 !important;
+}
+.toast-success-light svg {
+  color: #22c55e !important;
+}
+
+.toast-error-light {
+  background: #fef2f2 !important;
+  border-color: #fca5a5 !important;
+  color: #991b1b !important;
+}
+.toast-error-light svg {
+  color: #ef4444 !important;
+}

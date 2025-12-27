@@ -10,7 +10,10 @@ import ConfigEditor, { ConfigEditorRef, SETTINGS_TABS, SettingsTabId } from './c
 import ProjectPicker from './components/ProjectPicker';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { ModalProvider } from './contexts/ModalContext';
-import { Toaster } from 'sonner';
+import { ProjectWatcherProvider } from './contexts/ProjectWatcherContext';
+import { MissingFilesModal } from './components/modals/MissingFilesModal';
+import { Toaster, toast } from 'sonner';
+import { open } from '@tauri-apps/plugin-dialog';
 import { FileText, Settings, Save, Loader2, Menu, X, Home, FolderOpen } from 'lucide-react';
 import './App.css';
 
@@ -390,83 +393,96 @@ function App() {
     createProject,
     openExistingRepository,
     updateName,
+    relocateProject,
   } = useProjectStore();
+
+  // Load config function (extracted so it can be called on integrity restore)
+  const loadProjectConfig = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    
+    if (!activeProject) {
+      setConfig(null);
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      const [c, credentials] = await Promise.all([
+        loadConfigFromPath(activeProject.path),
+        loadSmtpCredentials(activeProject.path),
+      ]);
+      
+      // Migrate legacy theme/sofficePath to global settings if present
+      const currentGlobalSettings = loadGlobalSettings();
+      let needsGlobalSave = false;
+      const newGlobalSettings: GlobalSettings = { ...currentGlobalSettings };
+      
+      if (c.theme && currentGlobalSettings.theme === 'system') {
+        // Only migrate if global settings are at default
+        newGlobalSettings.theme = c.theme;
+        needsGlobalSave = true;
+      }
+      
+      if (c.sofficePath && !currentGlobalSettings.sofficePath) {
+        // Only migrate if global settings don't have a path set
+        newGlobalSettings.sofficePath = c.sofficePath;
+        needsGlobalSave = true;
+      }
+      
+      if (needsGlobalSave) {
+        saveGlobalSettings(newGlobalSettings);
+        // Apply theme immediately
+        const root = document.documentElement;
+        if (newGlobalSettings.theme === 'system') {
+          const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          root.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+        } else {
+          root.setAttribute('data-theme', newGlobalSettings.theme);
+        }
+      }
+      
+      // Merge SMTP passwords into connectors
+      if (c.emailConnectors) {
+        c.emailConnectors = c.emailConnectors.map(connector => ({
+          ...connector,
+          password: credentials[connector.id] || connector.password || ''
+        }));
+      }
+      
+      // If config has a project name and it differs from stored, update the store
+      if (c.projectName && c.projectName !== activeProject.name) {
+        updateName(activeProject.id, c.projectName);
+      }
+      
+      // Ensure project name is set (fallback to stored name)
+      if (!c.projectName) {
+        c.projectName = activeProject.name;
+      }
+      
+      console.log('App: Config loaded for', activeProject.path);
+      setConfig(c);
+    } catch (e) {
+      console.error("Failed to load project config:", e);
+      setConfig(null);
+    }
+    
+    setLoading(false);
+  }, [activeProject, updateName]);
 
   // Load config when active project changes
   useEffect(() => {
-    const loadProjectConfig = async () => {
-      setLoading(true);
-      
-      if (!activeProject) {
-        setConfig(null);
-        setLoading(false);
-        return;
-      }
-      
-      try {
-        const [c, credentials] = await Promise.all([
-          loadConfigFromPath(activeProject.path),
-          loadSmtpCredentials(activeProject.path),
-        ]);
-        
-        // Migrate legacy theme/sofficePath to global settings if present
-        const currentGlobalSettings = loadGlobalSettings();
-        let needsGlobalSave = false;
-        const newGlobalSettings: GlobalSettings = { ...currentGlobalSettings };
-        
-        if (c.theme && currentGlobalSettings.theme === 'system') {
-          // Only migrate if global settings are at default
-          newGlobalSettings.theme = c.theme;
-          needsGlobalSave = true;
-        }
-        
-        if (c.sofficePath && !currentGlobalSettings.sofficePath) {
-          // Only migrate if global settings don't have a path set
-          newGlobalSettings.sofficePath = c.sofficePath;
-          needsGlobalSave = true;
-        }
-        
-        if (needsGlobalSave) {
-          saveGlobalSettings(newGlobalSettings);
-          // Apply theme immediately
-          const root = document.documentElement;
-          if (newGlobalSettings.theme === 'system') {
-            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-            root.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
-          } else {
-            root.setAttribute('data-theme', newGlobalSettings.theme);
-          }
-        }
-        
-        // Merge SMTP passwords into connectors
-        if (c.emailConnectors) {
-          c.emailConnectors = c.emailConnectors.map(connector => ({
-            ...connector,
-            password: credentials[connector.id] || connector.password || ''
-          }));
-        }
-        
-        // If config has a project name and it differs from stored, update the store
-        if (c.projectName && c.projectName !== activeProject.name) {
-          updateName(activeProject.id, c.projectName);
-        }
-        
-        // Ensure project name is set (fallback to stored name)
-        if (!c.projectName) {
-          c.projectName = activeProject.name;
-        }
-        
-        setConfig(c);
-      } catch (e) {
-        console.error("Failed to load project config:", e);
-        setConfig(null);
-      }
-      
-      setLoading(false);
-    };
-    
     loadProjectConfig();
-  }, [activeProject, updateName]);
+  }, [loadProjectConfig]);
+  
+  // Handler for integrity restoration - show loading state immediately, then reload
+  const handleIntegrityRestored = useCallback(() => {
+    console.log('App: Integrity restored, reloading config');
+    // Set loading first to show spinner immediately (prevents flash of stale data)
+    setLoading(true);
+    setConfig(null);
+    // Then reload
+    loadProjectConfig(true);
+  }, [loadProjectConfig]);
 
   // Auto-save config when it changes
   const handleConfigChange = useCallback((newConfig: Config) => {
@@ -480,6 +496,50 @@ function App() {
     closeProject();
     setConfig(null);
   }, [closeProject]);
+
+  // Handle relocating the active project
+  const handleRelocateActiveProject = useCallback(async () => {
+    if (!activeProject) return;
+    
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: 'Select New Project Location',
+    });
+    
+    if (selected && typeof selected === 'string') {
+      const result = await relocateProject(activeProject.id, selected);
+      if (result.success) {
+        toast.success('Project relocated successfully');
+        // Reload config from new path
+        setLoading(true);
+        setConfig(null);
+        loadProjectConfig(true);
+      } else {
+        toast.error(result.error || 'Not a PIG repository');
+      }
+    }
+  }, [activeProject, relocateProject, loadProjectConfig]);
+
+  // Handle relocating a project from project picker
+  const handleRelocateProject = useCallback(async (projectId: string) => {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: 'Select New Project Location',
+    });
+    
+    if (selected && typeof selected === 'string') {
+      const result = await relocateProject(projectId, selected);
+      if (result.success) {
+        toast.success('Project relocated successfully');
+      } else {
+        toast.error(result.error || 'Not a PIG repository');
+      }
+      return result;
+    }
+    return { success: false, error: 'No folder selected' };
+  }, [relocateProject]);
 
   // Handle opening a recent project
   const handleOpenRecentProject = useCallback((project: typeof store.recentProjects[0]) => {
@@ -515,7 +575,7 @@ function App() {
   }
 
   // No active project - show project picker
-  if (!activeProject || !config) {
+  if (!activeProject) {
     return (
       <ThemeProvider initialTheme={globalSettings.theme}>
         <ModalProvider>
@@ -526,6 +586,7 @@ function App() {
             onRemoveProject={removeProject}
             onCreateProject={createProject}
             onOpenExisting={openExistingRepository}
+            onRelocateProject={handleRelocateProject}
           />
           <ThemedToaster />
         </ModalProvider>
@@ -536,13 +597,39 @@ function App() {
   return (
     <ThemeProvider initialTheme={globalSettings.theme}>
       <ModalProvider>
-        <AppContent 
-          config={config} 
-          setConfig={handleConfigChange} 
-          taglineTriplet={taglineTriplet}
-          onCloseProject={handleCloseProject}
-        />
-        <ThemedToaster />
+        <ProjectWatcherProvider rootPath={activeProject.path} onIntegrityRestored={handleIntegrityRestored}>
+          {config ? (
+            <AppContent 
+              config={config} 
+              setConfig={handleConfigChange} 
+              taglineTriplet={taglineTriplet}
+              onCloseProject={handleCloseProject}
+            />
+          ) : (
+            <div 
+              className="flex flex-col items-center justify-center h-screen gap-4"
+              style={{ backgroundColor: 'var(--bg-base)' }}
+            >
+              <div 
+                className="w-16 h-16 rounded-2xl flex items-center justify-center"
+                style={{ 
+                  background: 'linear-gradient(135deg, var(--error-500), var(--error-600))',
+                }}
+              >
+                <FileText size={32} className="text-white" />
+              </div>
+              <p style={{ color: 'var(--error-500)' }} className="font-medium">
+                Configuration unavailable
+              </p>
+            </div>
+          )}
+          <ThemedToaster />
+          <MissingFilesModal 
+            rootPath={activeProject.path} 
+            onRelocate={handleRelocateActiveProject}
+            onClose={handleCloseProject}
+          />
+        </ProjectWatcherProvider>
       </ModalProvider>
     </ThemeProvider>
   );
@@ -550,13 +637,23 @@ function App() {
 
 function ThemedToaster() {
   const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
+  
   return (
     <Toaster 
-      theme={resolvedTheme === 'dark' ? 'dark' : 'light'}
+      theme={isDark ? 'dark' : 'light'}
       position="bottom-right"
       toastOptions={{
         style: {
           fontFamily: 'var(--font-sans)',
+          background: isDark ? '#1a2035' : '#ffffff',
+          border: `1px solid ${isDark ? '#2a3347' : '#e2e8f0'}`,
+          color: isDark ? '#e2e8f0' : '#1e293b',
+          borderRadius: '12px',
+        },
+        classNames: {
+          success: isDark ? 'toast-success-dark' : 'toast-success-light',
+          error: isDark ? 'toast-error-dark' : 'toast-error-light',
         },
       }}
     />

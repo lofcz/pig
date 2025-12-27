@@ -7,6 +7,31 @@ use std::io::{Read, Write};
 use std::path::Path;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
+use std::collections::HashMap;
+use std::sync::Mutex;
+use tauri::{Emitter, State};
+
+#[cfg(windows)]
+mod win_watcher;
+
+#[cfg(windows)]
+use win_watcher::WinWatcher;
+
+#[cfg(not(windows))]
+use notify::{RecursiveMode, Watcher, RecommendedWatcher};
+
+// Platform-specific watcher storage
+#[cfg(windows)]
+#[derive(Default)]
+struct WatcherState {
+    watchers: Mutex<HashMap<String, WinWatcher>>,
+}
+
+#[cfg(not(windows))]
+#[derive(Default)]
+struct WatcherState {
+    watchers: Mutex<HashMap<String, RecommendedWatcher>>,
+}
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -204,15 +229,151 @@ async fn test_smtp_connection(smtp: SmtpConfig) -> Result<SendEmailResponse, Str
     }
 }
 
+#[derive(Serialize, Clone)]
+struct WatchEvent {
+    path: String,
+    kind: String,
+}
+
+// Windows implementation using custom watcher
+#[cfg(windows)]
+#[tauri::command]
+async fn watch_path(
+    path: String,
+    recursive: bool,
+    event_name: String,
+    state: State<'_, WatcherState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let mut watchers = state.watchers.lock().map_err(|e| e.to_string())?;
+    
+    if watchers.contains_key(&path) {
+        return Ok(());
+    }
+
+    let path_clone = path.clone();
+    let (tx, rx) = crossbeam_channel::unbounded();
+    
+    let watcher = WinWatcher::new(&path, recursive, tx).map_err(|e| e.to_string())?;
+
+    // Spawn thread to forward events to Tauri
+    let app_handle_clone = app_handle.clone();
+    let event_name_clone = event_name.clone();
+    println!("Starting event forwarder for: {}", event_name);
+    std::thread::spawn(move || {
+        println!("Event forwarder thread started for: {}", event_name_clone);
+        while let Ok(event) = rx.recv() {
+            let kind_str = match event.kind {
+                win_watcher::WatchEventKind::Create => "create",
+                win_watcher::WatchEventKind::Remove => "remove",
+                win_watcher::WatchEventKind::Modify => "modify",
+                win_watcher::WatchEventKind::Rename => "rename",
+            };
+            
+            println!("Forwarding event to frontend: {} - {} ({})", event_name_clone, event.path, kind_str);
+            let result = app_handle_clone.emit(
+                &event_name_clone,
+                WatchEvent {
+                    path: event.path,
+                    kind: kind_str.to_string(),
+                },
+            );
+            println!("Emit result: {:?}", result);
+        }
+        println!("Event forwarder thread ended for: {}", event_name_clone);
+    });
+
+    watchers.insert(path_clone, watcher);
+    Ok(())
+}
+
+// Non-Windows implementation using notify
+#[cfg(not(windows))]
+#[tauri::command]
+async fn watch_path(
+    path: String,
+    recursive: bool,
+    event_name: String,
+    state: State<'_, WatcherState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let mut watchers = state.watchers.lock().map_err(|e| e.to_string())?;
+    
+    if watchers.contains_key(&path) {
+        return Ok(());
+    }
+
+    let path_clone = path.clone();
+    let app_handle_clone = app_handle.clone();
+    let event_name_clone = event_name.clone();
+
+    let watcher = notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
+        match res {
+            Ok(event) => {
+                let kind_str = match event.kind {
+                    notify::EventKind::Create(_) => "create",
+                    notify::EventKind::Modify(_) => "modify",
+                    notify::EventKind::Remove(_) => "remove",
+                    _ => "any",
+                };
+                
+                for p in event.paths {
+                    let _ = app_handle_clone.emit(
+                        &event_name_clone,
+                        WatchEvent {
+                            path: p.to_string_lossy().into_owned(),
+                            kind: kind_str.to_string(),
+                        },
+                    );
+                }
+            }
+            Err(e) => {
+                let _ = app_handle_clone.emit(
+                    &event_name_clone,
+                    WatchEvent {
+                        path: format!("error:{}", e),
+                        kind: "error".to_string(),
+                    },
+                );
+            }
+        }
+    }).map_err(|e| e.to_string())?;
+
+    let mut watcher = watcher;
+    let mode = if recursive { RecursiveMode::Recursive } else { RecursiveMode::NonRecursive };
+    watcher.watch(Path::new(&path), mode).map_err(|e| e.to_string())?;
+
+    watchers.insert(path_clone, watcher);
+    Ok(())
+}
+
+#[tauri::command]
+async fn unwatch_path(path: String, state: State<'_, WatcherState>) -> Result<(), String> {
+    let mut watchers = state.watchers.lock().map_err(|e| e.to_string())?;
+    if let Some(watcher) = watchers.remove(&path) {
+        // Watcher is dropped here, which stops watching
+        drop(watcher);
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(WatcherState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
-        .invoke_handler(tauri::generate_handler![greet, send_email, test_smtp_connection, create_zip])
+        .invoke_handler(tauri::generate_handler![
+            greet, 
+            send_email, 
+            test_smtp_connection, 
+            create_zip,
+            watch_path,
+            unwatch_path
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

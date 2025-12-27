@@ -12,7 +12,7 @@ import { join } from '@tauri-apps/api/path';
 import ExtraItemsList from '../ExtraItemsList';
 import { AnalysisProgress } from '../../utils/analyzeExtraItems';
 import { Currency, ProjectStructure, DEFAULT_PROJECT_STRUCTURE } from '../../types';
-import { ProplatitItem } from '../../hooks/useProplatitFiles';
+import { ProplatitItem } from '../../hooks/useReimburseFiles.ts';
 
 interface ExtraItemsSectionProps {
   items: ProplatitItem[];

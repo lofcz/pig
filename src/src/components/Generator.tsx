@@ -4,7 +4,8 @@ import { getLastInvoicedMonth } from '../utils/logic';
 import { isAnalysisAvailable } from '../utils/analyzeExtraItems';
 import { modal } from '../contexts/ModalContext';
 import { GenerateAllModalComponent } from './GenerateAllModal';
-import { useProplatitFiles } from '../hooks';
+import { useReimburseFiles } from '../hooks';
+import { useProjectWatcher } from '../contexts/ProjectWatcherContext';
 import { Loader2 } from 'lucide-react';
 
 import {
@@ -70,12 +71,15 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
     selectedFiles: selectedProplatitFiles,
     pauseWatching,
     resumeWatching,
-  } = useProplatitFiles({
+  } = useReimburseFiles({
     rootPath: config.rootPath,
     primaryCurrency: config.primaryCurrency,
     exchangeRates: config.exchangeRates,
     projectStructure: config.projectStructure,
   });
+
+  // Get integrity restored trigger for reloading data
+  const { integrityRestoredCount } = useProjectWatcher();
 
   // Adhoc invoices hook
   const {
@@ -169,6 +173,15 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
   useEffect(() => {
     reloadLastInvoicedMonth();
   }, [reloadLastInvoicedMonth]);
+
+  // Reload invoices and extra items when integrity is restored
+  useEffect(() => {
+    if (integrityRestoredCount > 0) {
+      console.log('Generator: Integrity restored, reloading invoices and extra items');
+      reloadLastInvoicedMonth();
+      loadProplatitFiles(true); // Force reload
+    }
+  }, [integrityRestoredCount, reloadLastInvoicedMonth, loadProplatitFiles]);
 
   // Calculate base drafts (without extra value) using extracted hook
   const baseDrafts = useBaseDrafts({

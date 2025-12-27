@@ -20,6 +20,7 @@ import {
   validateRecentProjects,
   generateProjectId,
   updateProjectName,
+  updateProjectPath,
 } from '../utils/projectStore';
 import { validateRepository, scaffoldRepository } from '../utils/repository';
 
@@ -30,6 +31,8 @@ export interface UseProjectStoreResult {
   activeProject: RecentProject | null;
   /** Whether projects are being validated */
   isValidating: boolean;
+  /** List of recent projects */
+  recentProjects: RecentProject[];
   /** Add a project to recent and set as active */
   openProject: (path: string, name: string, isGitRepo?: boolean) => void;
   /** Remove a project from recent list */
@@ -46,6 +49,8 @@ export interface UseProjectStoreResult {
   openExistingRepository: (path: string) => Promise<{ success: boolean; error?: string }>;
   /** Update a project's name in the store */
   updateName: (projectId: string, newName: string) => void;
+  /** Relocate a project to a new path */
+  relocateProject: (projectId: string, newPath: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 export function useProjectStore(): UseProjectStoreResult {
@@ -125,6 +130,25 @@ export function useProjectStore(): UseProjectStoreResult {
     setStore(prev => updateProjectName(prev, projectId, newName));
   }, []);
 
+  const relocateProject = useCallback(async (
+    projectId: string,
+    newPath: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    const validation = await validateRepository(newPath);
+    
+    if (!validation.isValid) {
+      return {
+        success: false,
+        error: validation.error || 'The selected folder is not a valid PIG repository',
+      };
+    }
+    
+    // Update the project path in store
+    setStore(prev => updateProjectPath(prev, projectId, newPath, validation.isGitRepo));
+    
+    return { success: true };
+  }, []);
+
   // Validate projects on mount
   useEffect(() => {
     validateProjects();
@@ -135,6 +159,7 @@ export function useProjectStore(): UseProjectStoreResult {
     store,
     activeProject,
     isValidating,
+    recentProjects: store.recentProjects,
     openProject,
     removeProject,
     setActive,
@@ -143,6 +168,7 @@ export function useProjectStore(): UseProjectStoreResult {
     createProject,
     openExistingRepository,
     updateName,
+    relocateProject,
   };
 }
 

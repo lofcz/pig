@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { watch, UnwatchFn } from '@tauri-apps/plugin-fs';
 import { join } from '@tauri-apps/api/path';
 import { getProplatitFilesWithMetadata, FileEntryWithMetadata } from '../utils/logic';
 import { Config, Currency, ProjectStructure, DEFAULT_PROJECT_STRUCTURE } from '../types';
+import { useProjectWatcher } from '../contexts/ProjectWatcherContext';
 
 /**
  * File identity signature based on size and modification time.
@@ -74,7 +74,7 @@ function identitiesMatch(a: FileIdentity, b: FileIdentity): boolean {
  * Resets state when file content changes (detected via size + mtime).
  * Automatically watches the folder for changes and refreshes the file list.
  */
-export function useProplatitFiles({ 
+export function useReimburseFiles({
   rootPath, 
   primaryCurrency, 
   exchangeRates,
@@ -96,9 +96,9 @@ export function useProplatitFiles({
   // Track if a load is already in progress to avoid concurrent loads
   const loadingRef = useRef(false);
 
-  const loadFiles = useCallback(async () => {
-    // Prevent concurrent loads
-    if (loadingRef.current) return;
+  const loadFiles = useCallback(async (force = false) => {
+    // Prevent concurrent loads (unless forced)
+    if (loadingRef.current && !force) return;
     loadingRef.current = true;
     
     // Only show loading state on initial load (when we have no data yet)
@@ -108,7 +108,9 @@ export function useProplatitFiles({
     }
     
     try {
+      console.log('useReimburseFiles: Loading files from', rootPath);
       const loadedFiles = await getProplatitFilesWithMetadata(rootPath, projectStructure);
+      console.log('useReimburseFiles: Loaded', loadedFiles.length, 'files');
       const stateMap = stateMapRef.current;
       
       setFiles(loadedFiles.map(f => {
@@ -151,67 +153,65 @@ export function useProplatitFiles({
       }
       
       initialLoadDoneRef.current = true;
+    } catch (err) {
+      console.error('useReimburseFiles: Failed to load files:', err);
     } finally {
       setLoading(false);
       loadingRef.current = false;
     }
   }, [rootPath, primaryCurrency, projectStructure]);
 
-  // Initial load
+  // Reset state when rootPath changes (e.g., after integrity restore with config reload)
   useEffect(() => {
-    loadFiles();
-  }, [loadFiles]);
+    console.log('useReimburseFiles: rootPath changed to', rootPath);
+    // Reset refs for fresh load
+    loadingRef.current = false;
+    initialLoadDoneRef.current = false;
+    // Trigger load
+    loadFiles(true);
+  }, [rootPath]); // Only depend on rootPath, not loadFiles to avoid loops
 
-  // File watcher setup
+  // Subscribe to project watcher for file changes (uses single watcher, no folder locking)
+  const { subscribe, integrityRestoredCount } = useProjectWatcher();
+  
+  // Reload when integrity is restored (force reload to bypass guard)
   useEffect(() => {
-    let unwatchFn: UnwatchFn | null = null;
-    let isActive = true;
-
-    const setupWatcher = async () => {
-      try {
-        const watchPath = await join(rootPath, projectStructure.reimbursePendingFolder);
-        
-        // Use debounced watch to avoid rapid-fire events
-        // delayMs of 500ms groups rapid changes together
-        unwatchFn = await watch(
-          watchPath,
-          (event) => {
-            // Ignore events while paused (during our own file operations)
-            if (watchPausedRef.current || !isActive) return;
-            
-            // Only react to file changes (create, modify, remove)
-            // The event.type can be 'any', { access: ... }, { create: ... }, { modify: ... }, { remove: ... }, or 'other'
-            const eventType = event.type;
-            if (
-              eventType === 'any' ||
-              eventType === 'other' ||
-              (typeof eventType === 'object' && ('create' in eventType || 'modify' in eventType || 'remove' in eventType))
-            ) {
-              // Trigger a reload
-              loadFiles();
-            }
-          },
-          { 
-            recursive: false,  // Only watch the immediate folder
-            delayMs: 500,      // Debounce delay
-          }
-        );
-      } catch (err) {
-        // Folder might not exist yet, that's OK
-        console.warn('Failed to set up file watcher for extra items:', err);
+    if (integrityRestoredCount > 0) {
+      console.log('useReimburseFiles: Integrity restored count changed to', integrityRestoredCount);
+      loadFiles(true);
+    }
+  }, [integrityRestoredCount]); // Don't include loadFiles - we want this to run on count change only
+  
+  useEffect(() => {
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let reimbursePath: string | null = null;
+    
+    // Get the reimburse folder path for filtering
+    join(rootPath, projectStructure.reimbursePendingFolder).then(path => {
+      reimbursePath = path.replace(/\\/g, '/').toLowerCase();
+    });
+    
+    // Subscribe to watcher events and filter for reimburse folder
+    const unsubscribe = subscribe((event) => {
+      if (watchPausedRef.current) return;
+      if (!reimbursePath) return;
+      
+      // Check if event path is inside the reimburse folder
+      const normalizedEventPath = event.path.replace(/\\/g, '/').toLowerCase();
+      if (normalizedEventPath.startsWith(reimbursePath)) {
+        // Debounce reload
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          loadFiles();
+        }, 500);
       }
-    };
+    });
 
-    setupWatcher();
-
-    // Cleanup on unmount or when dependencies change
     return () => {
-      isActive = false;
-      if (unwatchFn) {
-        unwatchFn();
-      }
+      if (debounceTimer) clearTimeout(debounceTimer);
+      unsubscribe();
     };
-  }, [rootPath, projectStructure.reimbursePendingFolder, loadFiles]);
+  }, [rootPath, projectStructure.reimbursePendingFolder, loadFiles, subscribe]);
 
   /**
    * Pause file watching. Call this before performing file operations
