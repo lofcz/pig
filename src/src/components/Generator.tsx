@@ -37,6 +37,7 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
   const [currentDate] = useState(new Date());
   const [drafts, setDrafts] = useState<InvoiceDraft[]>([]);
   const [lastInvoicedMonth, setLastInvoicedMonth] = useState(0);
+  const [lastInvoicedMonthPrevYear, setLastInvoicedMonthPrevYear] = useState(0);
   const [lastInvoicedMonthLoading, setLastInvoicedMonthLoading] = useState(true);
   const [editingAmountId, setEditingAmountId] = useState<string | null>(null);
   // Total overrides by month key (rulesetId-year-month) - in STATE so it triggers recalculation
@@ -146,9 +147,14 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
       setLastInvoicedMonthLoading(true);
     }
     
-    const yStr = currentDate.getFullYear().toString().slice(-2);
+    const year = currentDate.getFullYear();
+    const yStr = year.toString().slice(-2);
     const lastM = await getLastInvoicedMonth(config.rootPath, yStr, config.projectStructure);
     setLastInvoicedMonth(lastM);
+    
+    const prevYStr = (year - 1).toString().slice(-2);
+    const lastMPrevYear = await getLastInvoicedMonth(config.rootPath, prevYStr, config.projectStructure);
+    setLastInvoicedMonthPrevYear(lastMPrevYear);
     
     initialInvoiceLoadDoneRef.current = true;
     setLastInvoicedMonthLoading(false);
@@ -188,6 +194,7 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
     config,
     currentDate,
     lastInvoicedMonth,
+    lastInvoicedMonthPrevYear,
     lastInvoicedMonthLoading,
     totalOverrides,
     calculatedTotalsRef,

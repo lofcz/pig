@@ -8,6 +8,7 @@ interface UseBaseDraftsOptions {
   config: Config;
   currentDate: Date;
   lastInvoicedMonth: number;
+  lastInvoicedMonthPrevYear: number;
   lastInvoicedMonthLoading: boolean;
   totalOverrides: Map<string, number>;
   calculatedTotalsRef: MutableRefObject<Map<string, number>>;
@@ -26,6 +27,7 @@ export function useBaseDrafts({
   config,
   currentDate,
   lastInvoicedMonth,
+  lastInvoicedMonthPrevYear,
   lastInvoicedMonthLoading,
   totalOverrides,
   calculatedTotalsRef,
@@ -44,8 +46,16 @@ export function useBaseDrafts({
 
     for (const ruleset of config.rulesets) {
       const cutoffDay = ruleset.entitlementDay;
-      const endMonth = currentDate.getDate() > cutoffDay ? currentMonth - 1 : currentMonth - 2;
+      let endMonth = currentDate.getDate() > cutoffDay ? currentMonth - 1 : currentMonth - 2;
       let startMonth = lastInvoicedMonth + 1;
+      
+      // Handle year boundary
+      let billingYear = year;
+      if (endMonth <= 0) {
+        billingYear = year - 1;
+        endMonth = endMonth + 12;
+        startMonth = lastInvoicedMonthPrevYear + 1;
+      }
       
       if (startMonth > endMonth) continue;
 
@@ -62,14 +72,14 @@ export function useBaseDrafts({
       {
         let accum = 0;
         for (let m = startMonth; m <= endMonth; m++) {
-          const dateStr = `${year}-${m.toString().padStart(2, '0')}`;
+          const dateStr = `${billingYear}-${m.toString().padStart(2, '0')}`;
           const salaryRule = ruleset.salaryRules.find(r => dateStr >= r.startDate && dateStr <= r.endDate)
             || { value: 0, deduction: 0 };
           accum += salaryRule.value - salaryRule.deduction;
 
           if (!isBillingMonth(m, ruleset)) continue;
 
-          const periodKey = `${ruleset.id}-${year}-${m}`;
+          const periodKey = `${ruleset.id}-${billingYear}-${m}`;
           calculatedTotalsRef.current.set(periodKey, accum);
 
           // Apply natural billing rules to determine carryover (no override)
@@ -90,7 +100,7 @@ export function useBaseDrafts({
         let accum = 0;
         let periodOwnSalary = 0; // Track this period's base salary (without carryover)
         for (let m = startMonth; m <= endMonth; m++) {
-          const dateStr = `${year}-${m.toString().padStart(2, '0')}`;
+          const dateStr = `${billingYear}-${m.toString().padStart(2, '0')}`;
           const salaryRule = ruleset.salaryRules.find(r => dateStr >= r.startDate && dateStr <= r.endDate)
             || { value: 0, deduction: 0 };
 
@@ -100,7 +110,7 @@ export function useBaseDrafts({
 
           if (!isBillingMonth(m, ruleset)) continue;
 
-          const periodKey = `${ruleset.id}-${year}-${m}`;
+          const periodKey = `${ruleset.id}-${billingYear}-${m}`;
           // Snapshot the period's own base salary (excluding carryover) before reset
           const currentPeriodBaseSalary = periodOwnSalary;
           computedBaseTotalsRef.current.set(periodKey, currentPeriodBaseSalary);
@@ -132,12 +142,12 @@ export function useBaseDrafts({
             const amount = maxValue;
             accum -= amount;
 
-            const { invoiceNo } = getMonthDates(year, m, partIndex);
+            const { invoiceNo } = getMonthDates(billingYear, m, partIndex);
             const desc = ruleset.descriptions && ruleset.descriptions.length > 0
               ? ruleset.descriptions[Math.floor(Math.random() * ruleset.descriptions.length)]
               : "Služby";
 
-            const periodLabel = getInvoiceLabel(year, m, ruleset);
+            const periodLabel = getInvoiceLabel(billingYear, m, ruleset);
             let label = `${periodLabel} (${ruleset.name})`;
 
             // In flush period, splits are labeled as "Remainder ..."; otherwise "Part N"
@@ -153,9 +163,9 @@ export function useBaseDrafts({
             }
 
             newDrafts.push({
-              id: `${ruleset.id}-${year}-${m}-${partIndex}`,
+              id: `${ruleset.id}-${billingYear}-${m}-${partIndex}`,
               rulesetId: ruleset.id,
-              year,
+              year: billingYear,
               month: m,
               index: partIndex,
               amount,
@@ -190,12 +200,12 @@ export function useBaseDrafts({
             const amount = Math.round(accum);
             accum = 0;
 
-            const { invoiceNo } = getMonthDates(year, m, partIndex);
+            const { invoiceNo } = getMonthDates(billingYear, m, partIndex);
             const desc = ruleset.descriptions && ruleset.descriptions.length > 0
               ? ruleset.descriptions[Math.floor(Math.random() * ruleset.descriptions.length)]
               : "Služby";
 
-            const periodLabel = getInvoiceLabel(year, m, ruleset);
+            const periodLabel = getInvoiceLabel(billingYear, m, ruleset);
             let label = `${periodLabel} (${ruleset.name})`;
 
             if (isFlush) {
@@ -209,9 +219,9 @@ export function useBaseDrafts({
             }
 
             newDrafts.push({
-              id: `${ruleset.id}-${year}-${m}-${partIndex}`,
+              id: `${ruleset.id}-${billingYear}-${m}-${partIndex}`,
               rulesetId: ruleset.id,
-              year,
+              year: billingYear,
               month: m,
               index: partIndex,
               amount,
@@ -237,7 +247,7 @@ export function useBaseDrafts({
     }
     
     return newDrafts;
-  }, [lastInvoicedMonthLoading, lastInvoicedMonth, config, currentDate, totalOverrides]);
+  }, [lastInvoicedMonthLoading, lastInvoicedMonth, lastInvoicedMonthPrevYear, config, currentDate, totalOverrides]);
 }
 
 /**
