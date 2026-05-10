@@ -166,7 +166,7 @@ export interface AIResponse<T = string> {
 // ============================================
 
 const DEFAULT_MODELS: Record<AIProvider, string> = {
-  openai: 'gpt-4o',
+  openai: 'gpt-5.4-mini',
   anthropic: 'claude-haiku-4-5',
   gemini: 'gemini-3-flash-preview',
   ollama: 'llama3',

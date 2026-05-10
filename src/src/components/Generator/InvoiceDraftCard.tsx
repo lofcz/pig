@@ -1,79 +1,84 @@
-import { 
-  FileSignature, 
-  Hash, 
-  FileText, 
+import { memo } from 'react';
+import {
+  FileSignature,
+  Hash,
+  FileText,
   Eye,
   CheckCircle2,
   Pencil,
-  X
+  X,
+  Dices
 } from 'lucide-react';
 import { findOption, CreatableSelect } from '../Select';
+import { Tooltip } from '../Tooltip';
 import { Config } from '../../types';
-import { InvoiceDraft, DraftUserEdits } from './types';
+import { InvoiceDraft } from './types';
+import {
+  useGeneratorStore,
+  useDraft,
+  useDraftSiblingsInPeriod,
+  useIsEditingAmount,
+  useOverride,
+} from '../../stores/generatorStore';
 
 interface InvoiceDraftCardProps {
-  draft: InvoiceDraft;
-  index: number;
+  draftId: string;
   config: Config;
-  drafts: InvoiceDraft[];
-  editingAmountId: string | null;
-  totalOverrides: Map<string, number>;
   computedBaseTotals: Map<string, number>;
   onPreview: (draft: InvoiceDraft) => void;
-  onSetEditingAmountId: (id: string | null) => void;
-  onSetTotalOverrides: (updater: (prev: Map<string, number>) => Map<string, number>) => void;
-  onUpdateDraft: (index: number, updates: Partial<InvoiceDraft>) => void;
-  onTrackUserEdit: (draftId: string, edits: Partial<DraftUserEdits>) => void;
 }
 
-export function InvoiceDraftCard({
-  draft,
-  index,
+function InvoiceDraftCardImpl({
+  draftId,
   config,
-  drafts,
-  editingAmountId,
-  totalOverrides,
   computedBaseTotals,
   onPreview,
-  onSetEditingAmountId,
-  onSetTotalOverrides,
-  onUpdateDraft,
-  onTrackUserEdit
 }: InvoiceDraftCardProps) {
-  const periodKey = `${draft.rulesetId}-${draft.year}-${draft.month}`;
-  const overrideValue = totalOverrides.get(periodKey);
+  // Subscribe ONLY to this card's draft. Sibling edits don't change this
+  // selector's identity, so React.memo + this subscription means a keystroke
+  // in another card never re-renders this one.
+  const draft = useDraft(draftId);
+  const periodKey = draft ? `${draft.rulesetId}-${draft.year}-${draft.month}` : '';
+  const overrideValue = useOverride(periodKey);
+  const isEditingAmount = useIsEditingAmount(draftId);
+  const periodSiblings = useDraftSiblingsInPeriod(
+    draft?.rulesetId ?? '',
+    draft?.year ?? 0,
+    draft?.month ?? 0
+  );
+
+  if (!draft) return null;
+
   const baseValue = computedBaseTotals.get(periodKey);
   const hasEffectiveOverride = overrideValue !== undefined && overrideValue !== baseValue;
-  
+
   const draftRuleset = config.rulesets.find(r => r.id === draft.rulesetId);
   const maxVal = draftRuleset?.maxInvoiceValue;
   const isSplit = maxVal && draft.monthSalary > maxVal;
   const isRemainder = draft.index > 0;
 
-  // Calculate remainder info for subline
   const getRemainderInfo = () => {
     if (!isRemainder) return null;
-    
-    const periodRemainders = drafts.filter(d => 
-      d.rulesetId === draft.rulesetId && 
-      d.year === draft.year && 
-      d.month === draft.month && 
-      d.index > 0
-    );
-    
+
+    const periodRemainders = periodSiblings.filter(d => d.index > 0);
     if (periodRemainders.length <= 1) return null;
-    
+
     const totalRemainder = periodRemainders.reduce((sum, d) => sum + d.amount, 0);
     const totalExtra = periodRemainders.reduce((sum, d) => sum + (d.extraValue || 0), 0);
     const baseRemainder = totalRemainder - totalExtra;
-    
+
     return { totalRemainder, totalExtra, baseRemainder };
   };
 
   const remainderInfo = getRemainderInfo();
 
+  // Read store actions imperatively — they're stable, never change identity,
+  // and don't subscribe this component to anything reactive.
+  const { updateDraft, trackUserEdit, setOverride, setEditingAmountId } =
+    useGeneratorStore.getState();
+
   return (
-    <div 
+    <div
       className={`card overflow-hidden card-hover relative ${draft.status === 'done' ? 'draft-done' : 'draft-pending'}`}
     >
       {/* Generated Overlay */}
@@ -97,9 +102,9 @@ export function InvoiceDraftCard({
             >
               <FileSignature size={22} />
               <span className="group-hover:underline">{draft.label}</span>
-              <Eye 
-                size={16} 
-                className="opacity-0 group-hover:opacity-100 transition-opacity" 
+              <Eye
+                size={16}
+                className="opacity-0 group-hover:opacity-100 transition-opacity"
               />
             </button>
             <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
@@ -108,7 +113,7 @@ export function InvoiceDraftCard({
           </div>
 
           <div className="text-right">
-            {editingAmountId === draft.id ? (
+            {isEditingAmount ? (
               <div className="flex items-center gap-2 justify-end">
                 <input
                   type="number"
@@ -119,22 +124,18 @@ export function InvoiceDraftCard({
                     const newTotal = Number(e.target.value);
                     if (!isNaN(newTotal) && newTotal >= 0) {
                       if (newTotal === draft.periodBaseSalary) {
-                        onSetTotalOverrides(prev => {
-                          const next = new Map(prev);
-                          next.delete(periodKey);
-                          return next;
-                        });
+                        setOverride(periodKey, null);
                       } else {
-                        onSetTotalOverrides(prev => new Map(prev).set(periodKey, newTotal));
+                        setOverride(periodKey, newTotal);
                       }
                     }
-                    onSetEditingAmountId(null);
+                    setEditingAmountId(null);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       (e.target as HTMLInputElement).blur();
                     } else if (e.key === 'Escape') {
-                      onSetEditingAmountId(null);
+                      setEditingAmountId(null);
                     }
                   }}
                 />
@@ -144,7 +145,7 @@ export function InvoiceDraftCard({
               </div>
             ) : (
               <div className="flex items-center gap-2 justify-end">
-                <div 
+                <div
                   className="text-2xl font-bold font-mono"
                   style={{ color: 'var(--text-primary)' }}
                 >
@@ -152,7 +153,7 @@ export function InvoiceDraftCard({
                 </div>
                 {draft.index === 0 && (
                   <button
-                    onClick={() => onSetEditingAmountId(draft.id)}
+                    onClick={() => setEditingAmountId(draft.id)}
                     className="p-1.5 rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/10"
                     style={{ color: 'var(--text-muted)' }}
                     title="Edit total amount"
@@ -162,13 +163,7 @@ export function InvoiceDraftCard({
                 )}
                 {hasEffectiveOverride && draft.index === 0 && (
                   <button
-                    onClick={() => {
-                      onSetTotalOverrides(prev => {
-                        const next = new Map(prev);
-                        next.delete(periodKey);
-                        return next;
-                      });
-                    }}
+                    onClick={() => setOverride(periodKey, null)}
                     className="p-1 rounded-lg transition-colors hover:bg-red-500/10"
                     style={{ color: 'var(--error-500)' }}
                     title="Reset to calculated amount"
@@ -178,7 +173,7 @@ export function InvoiceDraftCard({
                 )}
               </div>
             )}
-            
+
             {/* Subline rendering */}
             {isRemainder && remainderInfo && (
               remainderInfo.totalExtra > 0 ? (
@@ -191,13 +186,13 @@ export function InvoiceDraftCard({
                 </p>
               )
             )}
-            
+
             {!isRemainder && draft.extraValue && (
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                 {draft.amount - draft.extraValue > 0 ? `${(draft.amount - draft.extraValue).toLocaleString()} + ` : ''}{draft.extraValue.toLocaleString()} {config.primaryCurrency} extra
               </p>
             )}
-            
+
             {!isRemainder && !draft.extraValue && hasEffectiveOverride && isSplit && (
               <p className="text-sm">
                 <span style={{ color: 'var(--text-muted)' }}>/ </span>
@@ -206,13 +201,13 @@ export function InvoiceDraftCard({
                 </span>
               </p>
             )}
-            
+
             {!isRemainder && !draft.extraValue && hasEffectiveOverride && !isSplit && (
               <p className="text-sm" style={{ color: 'var(--accent-500)' }}>
                 (custom)
               </p>
             )}
-            
+
             {!isRemainder && !draft.extraValue && !hasEffectiveOverride && isSplit && draft.amount === maxVal && (
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                 / {draft.periodBaseSalary.toLocaleString()} {config.primaryCurrency} (split)
@@ -224,7 +219,7 @@ export function InvoiceDraftCard({
         {/* Form Fields */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div>
-            <label 
+            <label
               className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide mb-2"
               style={{ color: 'var(--text-muted)' }}
             >
@@ -237,15 +232,15 @@ export function InvoiceDraftCard({
                 value={draft.invoiceNoOverride}
                 onChange={e => {
                   const newValue = e.target.value;
-                  onTrackUserEdit(draft.id, { 
+                  trackUserEdit(draft.id, {
                     invoiceNoOverride: newValue,
                     variableSymbolOverride: draft.variableSymbolOverride === draft.invoiceNoOverride ? newValue : undefined
                   });
-                  
-                  onUpdateDraft(index, {
+
+                  updateDraft(draft.id, {
                     invoiceNoOverride: newValue,
-                    variableSymbolOverride: draft.variableSymbolOverride === draft.invoiceNoOverride 
-                      ? newValue 
+                    variableSymbolOverride: draft.variableSymbolOverride === draft.invoiceNoOverride
+                      ? newValue
                       : draft.variableSymbolOverride
                   });
                 }}
@@ -256,8 +251,8 @@ export function InvoiceDraftCard({
                 value={draft.variableSymbolOverride}
                 onChange={e => {
                   const newValue = e.target.value;
-                  onTrackUserEdit(draft.id, { variableSymbolOverride: newValue });
-                  onUpdateDraft(index, { variableSymbolOverride: newValue });
+                  trackUserEdit(draft.id, { variableSymbolOverride: newValue });
+                  updateDraft(draft.id, { variableSymbolOverride: newValue });
                 }}
                 className="flex-1 font-mono"
               />
@@ -265,13 +260,38 @@ export function InvoiceDraftCard({
           </div>
 
           <div>
-            <label 
-              className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide mb-2"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              <FileText size={14} />
-              Description
-            </label>
+            <div className="flex items-center mb-2">
+              <label
+                className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <FileText size={14} />
+                Description
+              </label>
+              {(() => {
+                const presets = config.rulesets.find(r => r.id === draft.rulesetId)?.descriptions || [];
+                if (presets.length <= 1) return null;
+                return (
+                  <Tooltip content="Shuffle description">
+                    <button
+                      type="button"
+                      aria-label="Shuffle description"
+                      onClick={() => {
+                        const candidates = presets.filter(d => d !== draft.description);
+                        const pool = candidates.length > 0 ? candidates : presets;
+                        const newValue = pool[Math.floor(Math.random() * pool.length)];
+                        trackUserEdit(draft.id, { description: newValue });
+                        updateDraft(draft.id, { description: newValue });
+                      }}
+                      className="ml-auto inline-flex shrink-0 p-1 rounded-md transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      <Dices size={14} />
+                    </button>
+                  </Tooltip>
+                );
+              })()}
+            </div>
             <CreatableSelect
               value={(() => {
                 const options = (config.rulesets.find(r => r.id === draft.rulesetId)?.descriptions || []).map(d => ({ value: d, label: d }));
@@ -281,8 +301,8 @@ export function InvoiceDraftCard({
               })()}
               onChange={(opt) => {
                 const newValue = opt ? opt.value : '';
-                onTrackUserEdit(draft.id, { description: newValue });
-                onUpdateDraft(index, { description: newValue });
+                trackUserEdit(draft.id, { description: newValue });
+                updateDraft(draft.id, { description: newValue });
               }}
               options={(config.rulesets.find(r => r.id === draft.rulesetId)?.descriptions || []).map(d => ({ value: d, label: d }))}
               isClearable
@@ -295,3 +315,5 @@ export function InvoiceDraftCard({
     </div>
   );
 }
+
+export const InvoiceDraftCard = memo(InvoiceDraftCardImpl);

@@ -1,20 +1,26 @@
 import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Config } from '../types';
-import { getLastInvoicedMonth } from '../utils/logic';
+import { getLastInvoicedMonthAbs } from '../utils/logic';
 import { isAnalysisAvailable } from '../utils/analyzeExtraItems';
 import { modal } from '../contexts/ModalContext';
 import { GenerateAllModalComponent } from './GenerateAllModal';
 import { useReimburseFiles } from '../hooks';
 import { useProjectWatcher } from '../contexts/ProjectWatcherContext';
 import { Loader2 } from 'lucide-react';
+import {
+  useGeneratorStore,
+  useDraftCount,
+  useDraftsTotalValue,
+  useSortedDraftIds,
+  useLastInvoicedMonthAbs,
+  useLastInvoicedMonthLoading,
+  useTotalOverrides,
+} from '../stores/generatorStore';
 
 import {
   GeneratorRef,
-  InvoiceDraft,
-  DraftUserEdits,
   useBaseDrafts,
   applyExtraValueToDrafts,
-  mergeDraftsWithUserEdits,
   useAdhocInvoices,
   useExtraItemsAnalysis,
   useInvoiceGeneration,
@@ -35,16 +41,24 @@ export type { GeneratorRef };
 
 const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ config }, ref) {
   const [currentDate] = useState(new Date());
-  const [drafts, setDrafts] = useState<InvoiceDraft[]>([]);
-  const [lastInvoicedMonth, setLastInvoicedMonth] = useState(0);
-  const [lastInvoicedMonthPrevYear, setLastInvoicedMonthPrevYear] = useState(0);
-  const [lastInvoicedMonthLoading, setLastInvoicedMonthLoading] = useState(true);
-  const [editingAmountId, setEditingAmountId] = useState<string | null>(null);
-  // Total overrides by month key (rulesetId-year-month) - in STATE so it triggers recalculation
-  const [totalOverrides, setTotalOverrides] = useState<Map<string, number>>(new Map());
-  
-  // Track user edits separately to preserve them across regenerations (for non-amount fields)
-  const userEditsRef = useRef<Map<string, DraftUserEdits>>(new Map());
+
+  // Store-driven slices that participate in the high-traffic edit path. These
+  // selectors return primitives or shallowly-stable arrays/maps so editing a
+  // draft's text fields (description / invoiceNo / VS) doesn't re-render the
+  // Generator shell — only the affected card subscribes to that draft's identity.
+  const draftCount = useDraftCount();
+  const draftsTotal = useDraftsTotalValue();
+  const sortedIds = useSortedDraftIds();
+  const lastInvoicedMonthAbs = useLastInvoicedMonthAbs();
+  const lastInvoicedMonthLoading = useLastInvoicedMonthLoading();
+  const totalOverrides = useTotalOverrides();
+  const setLastInvoicedMonthAbs = useGeneratorStore((s) => s.setLastInvoicedMonthAbs);
+  const setLastInvoicedMonthLoading = useGeneratorStore((s) => s.setLastInvoicedMonthLoading);
+  const mergeBaseDrafts = useGeneratorStore((s) => s.mergeBaseDrafts);
+  const clearOverrides = useGeneratorStore((s) => s.clearOverrides);
+  const clearUserEdits = useGeneratorStore((s) => s.clearUserEdits);
+  const resetGeneratorState = useGeneratorStore((s) => s.resetGeneratorState);
+
   // Store calculated totals (before user overrides) for reset functionality
   // Key: `${rulesetId}-${year}-${month}`, Value: calculated total for that period
   const calculatedTotalsRef = useRef<Map<string, number>>(new Map());
@@ -52,17 +66,15 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
   // Used to decide whether an override is "effective" - the override replaces this period's
   // own salary contribution while preserving carryover from prior periods.
   const computedBaseTotalsRef = useRef<Map<string, number>>(new Map());
-  
+
   // Track if initial invoice load has completed (to avoid flashing on refresh)
   const initialInvoiceLoadDoneRef = useRef(false);
 
-  // Manual refresh state
   const [refreshing, setRefreshing] = useState(false);
-  
+
   // AI Analysis availability state (managed separately for imperative refresh)
   const [canAnalyze, setCanAnalyze] = useState(false);
 
-  // Use the custom hook for proplatit files
   const {
     files: proplatitFiles,
     loading: proplatitLoading,
@@ -79,10 +91,8 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
     projectStructure: config.projectStructure,
   });
 
-  // Get integrity restored trigger for reloading data
   const { integrityRestoredCount } = useProjectWatcher();
 
-  // Adhoc invoices hook
   const {
     adhocInvoices,
     openAddAdhocModal,
@@ -95,7 +105,6 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
     primaryCurrency: config.primaryCurrency,
   });
 
-  // Extra items analysis hook
   const {
     analyzing,
     analysisProgress,
@@ -110,23 +119,18 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
     updateItem: updateProplatitItem,
   });
 
-  // Invoice generation hook
   const {
     handleGenerateById,
     handlePreview,
     handlePreviewAdhocInvoice,
   } = useInvoiceGeneration({
     config,
-    drafts,
     adhocInvoices,
     selectedProplatitFiles,
-    userEditsRef,
-    setDrafts,
   });
 
   const loading = proplatitLoading || lastInvoicedMonthLoading;
 
-  // Expose method to refresh analysis availability without re-rendering parent
   useImperativeHandle(ref, () => ({
     refreshAnalysisAvailability: () => {
       isAnalysisAvailable(config.rootPath).then(setCanAnalyze);
@@ -134,38 +138,28 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
     }
   }));
 
-  // Check if AI analysis is available on mount or when rootPath changes
   useEffect(() => {
     isAnalysisAvailable(config.rootPath).then(setCanAnalyze);
   }, [config.rootPath]);
 
-  // Reusable function to reload the last invoiced month from disk
   const reloadLastInvoicedMonth = useCallback(async () => {
     // Only show loading on initial load (to avoid UI flash on refresh)
     const isInitialLoad = !initialInvoiceLoadDoneRef.current;
     if (isInitialLoad) {
       setLastInvoicedMonthLoading(true);
     }
-    
-    const year = currentDate.getFullYear();
-    const yStr = year.toString().slice(-2);
-    const lastM = await getLastInvoicedMonth(config.rootPath, yStr, config.projectStructure);
-    setLastInvoicedMonth(lastM);
-    
-    const prevYStr = (year - 1).toString().slice(-2);
-    const lastMPrevYear = await getLastInvoicedMonth(config.rootPath, prevYStr, config.projectStructure);
-    setLastInvoicedMonthPrevYear(lastMPrevYear);
-    
+
+    const lastAbs = await getLastInvoicedMonthAbs(config.rootPath, config.projectStructure);
+    setLastInvoicedMonthAbs(lastAbs);
+
     initialInvoiceLoadDoneRef.current = true;
     setLastInvoicedMonthLoading(false);
-  }, [config.rootPath, config.projectStructure, currentDate]);
+  }, [config.rootPath, config.projectStructure, setLastInvoicedMonthAbs, setLastInvoicedMonthLoading]);
 
-  // Manual refresh - rescans filesystem while preserving local state
   const handleRefresh = useCallback(async () => {
     if (refreshing) return;
     setRefreshing(true);
     try {
-      // Reload invoice data and extra files in parallel
       await Promise.all([
         reloadLastInvoicedMonth(),
         loadProplatitFiles()
@@ -175,86 +169,93 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
     }
   }, [refreshing, loadProplatitFiles, reloadLastInvoicedMonth]);
 
-  // Load on mount and when config changes
   useEffect(() => {
     reloadLastInvoicedMonth();
   }, [reloadLastInvoicedMonth]);
 
-  // Reload invoices and extra items when integrity is restored
   useEffect(() => {
     if (integrityRestoredCount > 0) {
       console.log('Generator: Integrity restored, reloading invoices and extra items');
       reloadLastInvoicedMonth();
-      loadProplatitFiles(true); // Force reload
+      loadProplatitFiles(true);
     }
   }, [integrityRestoredCount, reloadLastInvoicedMonth, loadProplatitFiles]);
 
-  // Calculate base drafts (without extra value) using extracted hook
+  // Wipe transient generator state when this component unmounts (project switch /
+  // navigation away). Without this, reopening would re-hydrate from a stale store.
+  useEffect(() => {
+    return () => {
+      resetGeneratorState();
+    };
+  }, [resetGeneratorState]);
+
   const baseDrafts = useBaseDrafts({
     config,
     currentDate,
-    lastInvoicedMonth,
-    lastInvoicedMonthPrevYear,
+    lastInvoicedMonthAbs,
     lastInvoicedMonthLoading,
     totalOverrides,
     calculatedTotalsRef,
     computedBaseTotalsRef,
   });
 
-  // Apply extra value to base drafts and merge with user edits
-  // This runs when base drafts change OR when extra value changes
+  // Apply extra value to base drafts and push the result through the store.
+  // The store's mergeBaseDrafts action internally calls mergeDraftsWithUserEdits
+  // against state.drafts and state.userEdits, so the call site stays clean.
   useEffect(() => {
     if (proplatitLoading || lastInvoicedMonthLoading) return;
-    
-    // Calculate total extra including adhoc invoices
-    const totalExtraValue = proplatitTotalValue + adhocTotal;
-    
-    // Apply extra value to base drafts using extracted function
-    const draftsWithExtra = applyExtraValueToDrafts(baseDrafts, totalExtraValue, config);
-    
-    // Merge with existing drafts, preserving user edits (non-amount fields) and status
-    setDrafts(prevDrafts => 
-      mergeDraftsWithUserEdits(draftsWithExtra, prevDrafts, userEditsRef.current)
-    );
-  }, [baseDrafts, proplatitTotalValue, adhocTotal, proplatitLoading, lastInvoicedMonthLoading, config]);
 
-  // Called when the Generate All modal completes - syncs UI with disk state
+    const totalExtraValue = proplatitTotalValue + adhocTotal;
+    const draftsWithExtra = applyExtraValueToDrafts(baseDrafts, totalExtraValue, config);
+
+    mergeBaseDrafts(draftsWithExtra);
+  }, [baseDrafts, proplatitTotalValue, adhocTotal, proplatitLoading, lastInvoicedMonthLoading, config, mergeBaseDrafts]);
+
   const handleGenerateAllComplete = useCallback(async () => {
-    // Clear user edits since we're reloading everything
-    userEditsRef.current.clear();
-    // Clear adhoc invoices since they've been generated
+    clearUserEdits();
     clearAdhocInvoices();
-    // Clear total overrides since they applied to the generated periods
-    setTotalOverrides(new Map());
-    // Reload both proplatit files and last invoiced month from disk
-    // This will trigger drafts recalculation via useEffect
+    clearOverrides();
     await Promise.all([
       loadProplatitFiles(),
       reloadLastInvoicedMonth()
     ]);
-    // Resume file watching after reloading (was paused during generation)
     resumeWatching();
-  }, [clearAdhocInvoices, loadProplatitFiles, reloadLastInvoicedMonth, resumeWatching]);
+  }, [clearAdhocInvoices, loadProplatitFiles, reloadLastInvoicedMonth, resumeWatching, clearOverrides, clearUserEdits]);
 
-  // Build invoice snapshots for Generate All modal
   const buildInvoiceSnapshots = useCallback(() => {
-    const regularDrafts = drafts
+    // Read drafts non-reactively — this callback only runs when the user
+    // opens the Generate All modal, so subscribing here would be wasteful.
+    const drafts = useGeneratorStore.getState().drafts;
+
+    // Sort regular drafts chronologically (year, month) with a stable
+    // (rulesetId, index) tiebreak — same key the card list uses so the modal
+    // mirrors what the user sees on screen.
+    const sortedRegular = drafts
       .filter(d => d.status !== 'done')
-      .map(d => {
-        const customer = findCustomerForDraft(d, config);
-        const ruleset = config.rulesets.find(r => r.id === d.rulesetId);
-        const dueDateOffsetDays = ruleset?.dueDateOffsetDays ?? 14;
-        
-        // Calculate issue date and due date
-        let day = 1;
-        if (d.invoiceNoOverride.length === 8) {
-          day = parseInt(d.invoiceNoOverride.substring(0, 2));
-        }
-        const issueDate = new Date(d.year, d.month - 1, day);
-        const dueDate = new Date();
-        dueDate.setDate(dueDate.getDate() + dueDateOffsetDays);
-        
-        return {
+      .slice()
+      .sort((a, b) => {
+        const aAbs = a.year * 12 + (a.month - 1);
+        const bAbs = b.year * 12 + (b.month - 1);
+        if (aAbs !== bAbs) return aAbs - bAbs;
+        if (a.rulesetId !== b.rulesetId) return a.rulesetId.localeCompare(b.rulesetId);
+        return a.index - b.index;
+      });
+
+    const regularEntries = sortedRegular.map(d => {
+      const customer = findCustomerForDraft(d, config);
+      const ruleset = config.rulesets.find(r => r.id === d.rulesetId);
+      const dueDateOffsetDays = ruleset?.dueDateOffsetDays ?? 14;
+
+      let day = 1;
+      if (d.invoiceNoOverride.length === 8) {
+        day = parseInt(d.invoiceNoOverride.substring(0, 2));
+      }
+      const issueDate = new Date(d.year, d.month - 1, day);
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + dueDateOffsetDays);
+
+      return {
+        snapshot: {
           id: d.id,
           label: d.label,
           amount: d.amount,
@@ -263,40 +264,52 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
           issueDate: `${issueDate.getDate()}. ${issueDate.getMonth() + 1}. ${issueDate.getFullYear()}`,
           dueDate: `${dueDate.getDate()}. ${dueDate.getMonth() + 1}. ${dueDate.getFullYear()}`,
           description: d.description,
-        };
-      });
-    
-    // Include adhoc invoices with a special prefix
-    const adhocDrafts = adhocInvoices.map(inv => {
+        },
+        sortKey: d.year * 12 + (d.month - 1),
+        kind: 0, // regular drafts win ties against adhocs in the same month
+      };
+    });
+
+    const sortedAdhocs = adhocInvoices
+      .slice()
+      .sort((a, b) => new Date(a.issueDate).getTime() - new Date(b.issueDate).getTime());
+
+    const adhocEntries = sortedAdhocs.map(inv => {
       const issueDate = new Date(inv.issueDate);
       const dueDate = new Date(inv.dueDate);
       return {
-        id: `adhoc:${inv.id}`,
-        label: inv.name,
-        amount: inv.value,
-        customerId: inv.customerId,
-        invoiceNo: inv.invoiceNo,
-        issueDate: `${issueDate.getDate()}. ${issueDate.getMonth() + 1}. ${issueDate.getFullYear()}`,
-        dueDate: `${dueDate.getDate()}. ${dueDate.getMonth() + 1}. ${dueDate.getFullYear()}`,
-        description: inv.description,
+        snapshot: {
+          id: `adhoc:${inv.id}`,
+          label: inv.name,
+          amount: inv.value,
+          customerId: inv.customerId,
+          invoiceNo: inv.invoiceNo,
+          issueDate: `${issueDate.getDate()}. ${issueDate.getMonth() + 1}. ${issueDate.getFullYear()}`,
+          dueDate: `${dueDate.getDate()}. ${dueDate.getMonth() + 1}. ${dueDate.getFullYear()}`,
+          description: inv.description,
+        },
+        sortKey: issueDate.getFullYear() * 12 + issueDate.getMonth(),
+        kind: 1,
       };
     });
-    
-    return [...regularDrafts, ...adhocDrafts];
-  }, [drafts, adhocInvoices, config]);
 
-  // Build extra files snapshots for Generate All modal
+    // Stable-sort the combined list. JS Array.sort is stable since ES2019,
+    // so equal sortKey+kind items retain their group's pre-sorted order.
+    const combined = [...regularEntries, ...adhocEntries].sort(
+      (a, b) => a.sortKey - b.sortKey || a.kind - b.kind
+    );
+
+    return combined.map(e => e.snapshot);
+  }, [adhocInvoices, config]);
+
   const buildExtraFilesSnapshots = useCallback(() => {
     return selectedProplatitFiles.map(item => ({
-      // Replace 'proplatit' with 'proplaceno' in the path since files get moved during generation
       path: item.file.path.replace(/proplatit([\\\/])/i, 'proplaceno$1'),
       name: item.file.name
     }));
   }, [selectedProplatitFiles]);
 
-  // Handler to open Generate All modal using context
   const openGenerateAllModal = useCallback(async () => {
-    // Pause file watching during generation to avoid interference from our own file operations
     pauseWatching();
     await modal.open(GenerateAllModalComponent, {
       config,
@@ -309,25 +322,8 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
     });
   }, [config, buildInvoiceSnapshots, buildExtraFilesSnapshots, handleGenerateById, handleGenerateAllComplete, pauseWatching]);
 
-  // Draft update handler for child components
-  const handleUpdateDraft = useCallback((index: number, updates: Partial<InvoiceDraft>) => {
-    setDrafts(ds => ds.map((d, idx) => 
-      idx === index ? { ...d, ...updates } : d
-    ));
-  }, []);
-
-  // Track user edits handler for child components
-  const handleTrackUserEdit = useCallback((draftId: string, edits: Partial<DraftUserEdits>) => {
-    const existingEdits = userEditsRef.current.get(draftId) || {};
-    userEditsRef.current.set(draftId, { ...existingEdits, ...edits });
-  }, []);
-
-  const totalDraftValue = drafts.reduce((sum, d) => sum + d.amount, 0) + adhocTotal;
-
-  // Helper to check if there are any invoices ready for generation
-  const hasActiveInvoices = drafts.length > 0 || adhocInvoices.length > 0;
-
-  // Use canAnalyze from the analysis hook, combined with local state
+  const totalDraftValue = draftsTotal + adhocTotal;
+  const hasActiveInvoices = draftCount > 0 || adhocInvoices.length > 0;
   const effectiveCanAnalyze = canAnalyze || analysisCanAnalyze;
 
   return (
@@ -343,7 +339,7 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
       <>
         <GeneratorHeader
           hasActiveInvoices={hasActiveInvoices}
-          invoiceCount={drafts.length + adhocInvoices.length}
+          invoiceCount={draftCount + adhocInvoices.length}
           totalValue={totalDraftValue}
           primaryCurrency={config.primaryCurrency}
           refreshing={refreshing}
@@ -353,7 +349,7 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
           onGenerateAll={openGenerateAllModal}
         />
 
-        <BillingPeriodBadge drafts={drafts} />
+        <BillingPeriodBadge />
 
         <ExtraItemsSection
           items={proplatitFiles}
@@ -377,25 +373,16 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
           onRemove={handleRemoveAdhocInvoice}
         />
 
-        {/* Invoice Drafts */}
         <div className="space-y-4">
           {!hasActiveInvoices && <EmptyState />}
 
-          {drafts.map((draft, i) => (
+          {sortedIds.map(id => (
             <InvoiceDraftCard
-              key={draft.id}
-              draft={draft}
-              index={i}
+              key={id}
+              draftId={id}
               config={config}
-              drafts={drafts}
-              editingAmountId={editingAmountId}
-              totalOverrides={totalOverrides}
               computedBaseTotals={computedBaseTotalsRef.current}
               onPreview={handlePreview}
-              onSetEditingAmountId={setEditingAmountId}
-              onSetTotalOverrides={setTotalOverrides}
-              onUpdateDraft={handleUpdateDraft}
-              onTrackUserEdit={handleTrackUserEdit}
             />
           ))}
         </div>

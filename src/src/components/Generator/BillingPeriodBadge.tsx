@@ -1,21 +1,19 @@
 import { Calendar } from 'lucide-react';
-import { InvoiceDraft } from './types';
+import { useBillingPeriods } from '../../stores/generatorStore';
 
-interface BillingPeriodBadgeProps {
-  drafts: InvoiceDraft[];
-}
+export function BillingPeriodBadge() {
+  // Subscribes via shallow-equal selector — only re-renders when the unique
+  // sorted list of period labels actually changes (not on per-keystroke draft edits).
+  const uniquePeriods = useBillingPeriods();
 
-export function BillingPeriodBadge({ drafts }: BillingPeriodBadgeProps) {
-  if (drafts.length === 0) return null;
-
-  const uniquePeriods = Array.from(new Set(drafts.map(d => d.periodLabel)));
+  if (uniquePeriods.length === 0) return null;
 
   return (
-    <div 
+    <div
       className="card mb-6 px-5 py-4 flex items-center gap-3"
       style={{ borderLeft: '4px solid var(--accent-500)' }}
     >
-      <div 
+      <div
         className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
         style={{ backgroundColor: 'var(--accent-100)' }}
       >

@@ -1,14 +1,13 @@
 import { useMemo, MutableRefObject } from 'react';
 import { Config } from '../../types';
-import { getMonthDates } from '../../utils/logic';
+import { absMonth, getMonthDates, monthFromAbs, yearFromAbs } from '../../utils/logic';
 import { InvoiceDraft, DraftUserEdits } from './types';
 import { isBillingMonth, getInvoiceLabel } from './utils';
 
 interface UseBaseDraftsOptions {
   config: Config;
   currentDate: Date;
-  lastInvoicedMonth: number;
-  lastInvoicedMonthPrevYear: number;
+  lastInvoicedMonthAbs: number | null;
   lastInvoicedMonthLoading: boolean;
   totalOverrides: Map<string, number>;
   calculatedTotalsRef: MutableRefObject<Map<string, number>>;
@@ -26,8 +25,7 @@ interface UseBaseDraftsOptions {
 export function useBaseDrafts({
   config,
   currentDate,
-  lastInvoicedMonth,
-  lastInvoicedMonthPrevYear,
+  lastInvoicedMonthAbs,
   lastInvoicedMonthLoading,
   totalOverrides,
   calculatedTotalsRef,
@@ -35,10 +33,9 @@ export function useBaseDrafts({
 }: UseBaseDraftsOptions): InvoiceDraft[] {
   return useMemo(() => {
     if (lastInvoicedMonthLoading) return [];
-    
+
     const newDrafts: InvoiceDraft[] = [];
-    const year = currentDate.getFullYear();
-    const currentMonth = currentDate.getMonth() + 1;
+    const currentMonthAbs = absMonth(currentDate.getFullYear(), currentDate.getMonth() + 1);
 
     // Rebuild calculated totals each run (used for effective override detection + reset UI)
     calculatedTotalsRef.current.clear();
@@ -46,32 +43,37 @@ export function useBaseDrafts({
 
     for (const ruleset of config.rulesets) {
       const cutoffDay = ruleset.entitlementDay;
-      let endMonth = currentDate.getDate() > cutoffDay ? currentMonth - 1 : currentMonth - 2;
-      let startMonth = lastInvoicedMonth + 1;
-      
-      // Handle year boundary
-      let billingYear = year;
-      if (endMonth <= 0) {
-        billingYear = year - 1;
-        endMonth = endMonth + 12;
-        startMonth = lastInvoicedMonthPrevYear + 1;
-      }
-      
-      if (startMonth > endMonth) continue;
+      // End of billable range: previous full month (or two months back if we
+      // haven't passed the entitlement cutoff yet this month).
+      const endMonthAbs = currentDate.getDate() > cutoffDay
+        ? currentMonthAbs - 1
+        : currentMonthAbs - 2;
+
+      // Start of billable range: month after the last invoiced one. When no
+      // invoices exist anywhere, fall back to January of the year endMonthAbs
+      // lives in — preserves the "fresh install in early January catches up
+      // the whole previous year" behavior.
+      const startMonthAbs = lastInvoicedMonthAbs !== null
+        ? lastInvoicedMonthAbs + 1
+        : absMonth(yearFromAbs(endMonthAbs), 1);
+
+      if (startMonthAbs > endMonthAbs) continue;
 
       const maxValue = ruleset.maxInvoiceValue;
 
-      // Compute the last billing month in-range; "flush" means "last billing period", not "endMonth"
-      let lastBillingMonth: number | null = null;
-      for (let m = startMonth; m <= endMonth; m++) {
-        if (isBillingMonth(m, ruleset)) lastBillingMonth = m;
+      // Compute the last billing month in-range; "flush" means "last billing period", not "endMonthAbs"
+      let lastBillingMonthAbs: number | null = null;
+      for (let mAbs = startMonthAbs; mAbs <= endMonthAbs; mAbs++) {
+        if (isBillingMonth(monthFromAbs(mAbs), ruleset)) lastBillingMonthAbs = mAbs;
       }
-      if (lastBillingMonth === null) continue;
+      if (lastBillingMonthAbs === null) continue;
 
       // PASS 1: calculate baseline (no override) totals for each billing period (used for UI reset + effective override)
       {
         let accum = 0;
-        for (let m = startMonth; m <= endMonth; m++) {
+        for (let mAbs = startMonthAbs; mAbs <= endMonthAbs; mAbs++) {
+          const billingYear = yearFromAbs(mAbs);
+          const m = monthFromAbs(mAbs);
           const dateStr = `${billingYear}-${m.toString().padStart(2, '0')}`;
           const salaryRule = ruleset.salaryRules.find(r => dateStr >= r.startDate && dateStr <= r.endDate)
             || { value: 0, deduction: 0 };
@@ -82,15 +84,14 @@ export function useBaseDrafts({
           const periodKey = `${ruleset.id}-${billingYear}-${m}`;
           calculatedTotalsRef.current.set(periodKey, accum);
 
-          // Apply natural billing rules to determine carryover (no override)
           let remaining = accum;
           while (maxValue && remaining >= maxValue) remaining -= maxValue;
 
-          const isFlush = m === lastBillingMonth;
+          const isFlush = mAbs === lastBillingMonthAbs;
           if (remaining > 0 && ruleset.minimizeInvoices && maxValue && !isFlush) {
-            accum = remaining; // carry remainder forward
+            accum = remaining;
           } else {
-            accum = 0; // reset after billing period
+            accum = 0;
           }
         }
       }
@@ -98,8 +99,10 @@ export function useBaseDrafts({
       // PASS 2: generate drafts, applying overrides (overrides affect carryover, but still follow minimize+flush rules)
       {
         let accum = 0;
-        let periodOwnSalary = 0; // Track this period's base salary (without carryover)
-        for (let m = startMonth; m <= endMonth; m++) {
+        let periodOwnSalary = 0;
+        for (let mAbs = startMonthAbs; mAbs <= endMonthAbs; mAbs++) {
+          const billingYear = yearFromAbs(mAbs);
+          const m = monthFromAbs(mAbs);
           const dateStr = `${billingYear}-${m.toString().padStart(2, '0')}`;
           const salaryRule = ruleset.salaryRules.find(r => dateStr >= r.startDate && dateStr <= r.endDate)
             || { value: 0, deduction: 0 };
@@ -111,32 +114,26 @@ export function useBaseDrafts({
           if (!isBillingMonth(m, ruleset)) continue;
 
           const periodKey = `${ruleset.id}-${billingYear}-${m}`;
-          // Snapshot the period's own base salary (excluding carryover) before reset
           const currentPeriodBaseSalary = periodOwnSalary;
           computedBaseTotalsRef.current.set(periodKey, currentPeriodBaseSalary);
 
           const overrideValue = totalOverrides.get(periodKey);
-          // Treat override equal to the period's base salary as a no-op override
-          // (Override is for the period's OWN contribution, not the total including carryover)
           const hasEffectiveOverride = overrideValue !== undefined && overrideValue !== currentPeriodBaseSalary;
 
-          // Override replaces the period's own salary contribution, preserving carryover
-          // periodTotal = carryover + (override OR original period salary)
           const carryover = accum - currentPeriodBaseSalary;
           const effectivePeriodSalary = hasEffectiveOverride ? overrideValue! : currentPeriodBaseSalary;
           const periodTotal = carryover + effectivePeriodSalary;
           accum = periodTotal;
 
-          const isFlush = m === lastBillingMonth;
+          const isFlush = mAbs === lastBillingMonthAbs;
 
           // Generate maxValue chunks
           // In flush period: generate ALL chunks (labeled as "Remainder 1/N", etc.)
           // In non-flush with minimizeInvoices: generate only ONE chunk, carry rest forward
           let partIndex = 0;
           while (maxValue && accum >= maxValue) {
-            // With minimizeInvoices on non-flush period, only generate first invoice
             if (ruleset.minimizeInvoices && !isFlush && partIndex > 0) {
-              break; // Carry remaining accum forward
+              break;
             }
 
             const amount = maxValue;
@@ -150,9 +147,7 @@ export function useBaseDrafts({
             const periodLabel = getInvoiceLabel(billingYear, m, ruleset);
             let label = `${periodLabel} (${ruleset.name})`;
 
-            // In flush period, splits are labeled as "Remainder ..."; otherwise "Part N"
             if (isFlush) {
-              // totalParts includes the first invoice; remainder count is totalParts-1
               const totalParts = maxValue ? Math.ceil(periodTotal / maxValue) : 1;
               if (totalParts > 1 && partIndex > 0) {
                 const remCount = totalParts - 1;
@@ -182,21 +177,14 @@ export function useBaseDrafts({
             partIndex++;
           }
 
-          // Handle leftover (accum now contains remainder < maxValue, or full value if maxValue undefined)
           if (accum > 0) {
-            // Override BELOW maxValue: bill immediately (user wants exactly this amount for this period)
-            // Override AT/ABOVE maxValue: already billed maxValue chunks, carry remainder to flush
-            // No override: carry forward if minimize invoices is on and not at flush period
             const overrideBelowMax = hasEffectiveOverride && maxValue && periodTotal < maxValue;
             const shouldCarry = !overrideBelowMax && ruleset.minimizeInvoices && maxValue && !isFlush;
             if (shouldCarry) {
-              // Do NOT emit remainder invoice yet; carry it into next period
-              // Reset periodOwnSalary so next period tracks its own base salary
               periodOwnSalary = 0;
               continue;
             }
 
-            // Bill remainder (either not minimizing, no splitting, or flush period)
             const amount = Math.round(accum);
             accum = 0;
 
@@ -235,19 +223,17 @@ export function useBaseDrafts({
               periodBaseSalary: currentPeriodBaseSalary,
               extraValue: undefined
             });
-            // Reset periodOwnSalary after billing (but not accum, which may carry forward)
             periodOwnSalary = 0;
           } else {
-            // No remainder; reset for next period
             accum = 0;
             periodOwnSalary = 0;
           }
         }
       }
     }
-    
+
     return newDrafts;
-  }, [lastInvoicedMonthLoading, lastInvoicedMonth, lastInvoicedMonthPrevYear, config, currentDate, totalOverrides]);
+  }, [lastInvoicedMonthLoading, lastInvoicedMonthAbs, config, currentDate, totalOverrides]);
 }
 
 /**

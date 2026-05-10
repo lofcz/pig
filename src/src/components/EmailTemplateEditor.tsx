@@ -5,6 +5,8 @@ import { Node as TiptapNode, Mark, mergeAttributes } from '@tiptap/core';
 import { EmailTemplate } from '../types';
 import { PLACEHOLDER_CATEGORIES, getAllPlaceholders } from '../utils/emailTemplates';
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { computePosition, autoUpdate, offset, flip, shift } from '@floating-ui/dom';
 import Editor from '@monaco-editor/react';
 import { useTheme } from '../contexts/ThemeContext';
 import { html as beautifyHtml } from 'js-beautify';
@@ -124,12 +126,17 @@ function unescapeEtaSyntax(html: string): string {
 
 export function EmailTemplateEditor({ template, onChange, onRemove }: EmailTemplateEditorProps) {
   const [isExpanded, setIsExpanded] = useState(true);
-  const [showPlaceholderMenu, setShowPlaceholderMenu] = useState(false);
+  // Active anchor for the placeholder popover. null = closed. Any non-null value
+  // = open and positioned against that element. We track the anchor (rather than
+  // a boolean) so the same state can serve either toolbar's trigger.
+  const [popoverAnchor, setPopoverAnchor] = useState<HTMLButtonElement | null>(null);
+  const showPlaceholderMenu = popoverAnchor !== null;
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [editorMode, setEditorMode] = useState<'wysiwyg' | 'html'>('wysiwyg');
   const initialBody = getBodyAsString(template.body);
   const [htmlContent, setHtmlContent] = useState<string>(initialBody);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const wysiwygTriggerRef = useRef<HTMLButtonElement>(null);
+  const htmlTriggerRef = useRef<HTMLButtonElement>(null);
   const { resolvedTheme } = useTheme();
   // Track if we're in the middle of switching modes (to prevent TipTap onUpdate from overwriting HTML)
   const isSwitchingModeRef = useRef(false);
@@ -162,26 +169,19 @@ export function EmailTemplateEditor({ template, onChange, onRemove }: EmailTempl
     },
   });
 
-  // Close menu on outside click
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setShowPlaceholderMenu(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+  const closePlaceholderMenu = useCallback(() => setPopoverAnchor(null), []);
+
+  const togglePlaceholderMenu = useCallback((anchor: HTMLButtonElement | null) => {
+    setPopoverAnchor(prev => (prev ? null : anchor));
   }, []);
 
   const insertPlaceholder = (key: string, _label: string) => {
     if (editorMode === 'wysiwyg') {
-      // Insert as text with placeholder syntax
       editor?.chain().focus().insertContent(`{{${key}}}`).run();
     } else {
-      // Insert placeholder in HTML mode
       setHtmlContent((prev) => prev + `{{${key}}}`);
     }
-    setShowPlaceholderMenu(false);
+    closePlaceholderMenu();
   };
 
   const handleModeSwitch = useCallback((newMode: 'wysiwyg' | 'html') => {
@@ -501,32 +501,23 @@ export function EmailTemplateEditor({ template, onChange, onRemove }: EmailTempl
             <div className="flex-1" />
 
             {/* Insert Placeholder */}
-            <div className="relative" ref={menuRef}>
-              <button
-                onClick={() => setShowPlaceholderMenu(!showPlaceholderMenu)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium"
-                style={{
-                  background: showPlaceholderMenu ? 'var(--accent-100)' : 'var(--bg-surface)',
-                  color: 'var(--accent-600)',
-                  border: '1px solid var(--accent-200)',
-                }}
-              >
-                <Variable size={14} />
-                Insert Variable
-                <ChevronDown
-                  size={14}
-                  style={{ transform: showPlaceholderMenu ? 'rotate(180deg)' : 'none' }}
-                />
-              </button>
-
-              {showPlaceholderMenu && (
-                <PlaceholderMenu
-                  expandedCategory={expandedCategory}
-                  setExpandedCategory={setExpandedCategory}
-                  insertPlaceholder={insertPlaceholder}
-                />
-              )}
-            </div>
+            <button
+              ref={wysiwygTriggerRef}
+              onClick={() => togglePlaceholderMenu(wysiwygTriggerRef.current)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium"
+              style={{
+                background: showPlaceholderMenu ? 'var(--accent-100)' : 'var(--bg-surface)',
+                color: 'var(--accent-600)',
+                border: '1px solid var(--accent-200)',
+              }}
+            >
+              <Variable size={14} />
+              Insert Variable
+              <ChevronDown
+                size={14}
+                style={{ transform: showPlaceholderMenu ? 'rotate(180deg)' : 'none' }}
+              />
+            </button>
           </div>
 
           {/* Editor Content */}
@@ -562,32 +553,23 @@ export function EmailTemplateEditor({ template, onChange, onRemove }: EmailTempl
               <div className="flex-1" />
 
               {/* Insert Placeholder in HTML mode */}
-              <div className="relative" ref={menuRef}>
-                <button
-                  onClick={() => setShowPlaceholderMenu(!showPlaceholderMenu)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium"
-                  style={{
-                    background: showPlaceholderMenu ? 'var(--accent-100)' : 'var(--bg-surface)',
-                    color: 'var(--accent-600)',
-                    border: '1px solid var(--accent-200)',
-                  }}
-                >
-                  <Variable size={14} />
-                  Insert Variable
-                  <ChevronDown
-                    size={14}
-                    style={{ transform: showPlaceholderMenu ? 'rotate(180deg)' : 'none' }}
-                  />
-                </button>
-
-                {showPlaceholderMenu && (
-                  <PlaceholderMenu
-                    expandedCategory={expandedCategory}
-                    setExpandedCategory={setExpandedCategory}
-                    insertPlaceholder={insertPlaceholder}
-                  />
-                )}
-              </div>
+              <button
+                ref={htmlTriggerRef}
+                onClick={() => togglePlaceholderMenu(htmlTriggerRef.current)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium"
+                style={{
+                  background: showPlaceholderMenu ? 'var(--accent-100)' : 'var(--bg-surface)',
+                  color: 'var(--accent-600)',
+                  border: '1px solid var(--accent-200)',
+                }}
+              >
+                <Variable size={14} />
+                Insert Variable
+                <ChevronDown
+                  size={14}
+                  style={{ transform: showPlaceholderMenu ? 'rotate(180deg)' : 'none' }}
+                />
+              </button>
             </div>
 
             {/* Monaco Editor */}
@@ -666,24 +648,78 @@ export function EmailTemplateEditor({ template, onChange, onRemove }: EmailTempl
       `}</style>
         </div>
       )}
+
+      {popoverAnchor && (
+        <PlaceholderMenu
+          anchorEl={popoverAnchor}
+          onClose={closePlaceholderMenu}
+          expandedCategory={expandedCategory}
+          setExpandedCategory={setExpandedCategory}
+          insertPlaceholder={insertPlaceholder}
+        />
+      )}
     </div>
   );
 }
 
-// Placeholder Menu Component
+// Placeholder Menu Component (portal-rendered, anchored via floating-ui).
 function PlaceholderMenu({
+  anchorEl,
+  onClose,
   expandedCategory,
   setExpandedCategory,
   insertPlaceholder,
 }: {
+  anchorEl: HTMLElement;
+  onClose: () => void;
   expandedCategory: string | null;
   setExpandedCategory: (cat: string | null) => void;
   insertPlaceholder: (key: string, label: string) => void;
 }) {
-  return (
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const popover = popoverRef.current;
+    if (!popover) return;
+    return autoUpdate(anchorEl, popover, () => {
+      computePosition(anchorEl, popover, {
+        placement: 'bottom-end',
+        middleware: [offset(4), flip(), shift({ padding: 8 })],
+      }).then(({ x, y }) => setCoords({ x, y }));
+    });
+  }, [anchorEl]);
+
+  // Outside-click + Escape to close. The portaled menu lives outside the
+  // anchor's DOM subtree, so we check both anchor and popover for "inside".
+  useEffect(() => {
+    function onMouseDown(e: MouseEvent) {
+      const target = e.target as Node;
+      if (anchorEl.contains(target)) return;
+      if (popoverRef.current?.contains(target)) return;
+      onClose();
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [anchorEl, onClose]);
+
+  return createPortal(
     <div
-      className="absolute right-0 top-full mt-1 w-72 rounded-lg shadow-xl z-50 overflow-hidden"
+      ref={popoverRef}
+      className="w-72 rounded-lg shadow-xl overflow-hidden"
       style={{
+        position: 'absolute',
+        top: coords?.y ?? 0,
+        left: coords?.x ?? 0,
+        visibility: coords ? 'visible' : 'hidden',
+        zIndex: 9999,
         backgroundColor: 'var(--bg-surface)',
         border: '1px solid var(--border-default)',
       }}
@@ -740,7 +776,8 @@ function PlaceholderMenu({
           )}
         </div>
       ))}
-    </div>
+    </div>,
+    document.body
   );
 }
 

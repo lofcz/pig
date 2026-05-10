@@ -7,7 +7,8 @@ import { generateInvoiceOdt, convertToPdf } from '../../utils/odt';
 import { loadGlobalSettings } from '../../utils/globalSettings';
 import { modal } from '../../contexts/ModalContext';
 import { PDFPreviewModal } from '../modals/PDFPreviewModal';
-import { InvoiceDraft, AdhocInvoice, DraftUserEdits } from './types';
+import { useGeneratorStore } from '../../stores/generatorStore';
+import { InvoiceDraft, AdhocInvoice } from './types';
 import { buildInvoiceReplacements, formatDateCzech, formatAmountCzech } from './utils';
 
 interface SelectedProplatitFile {
@@ -18,11 +19,8 @@ interface SelectedProplatitFile {
 
 export interface UseInvoiceGenerationProps {
   config: Config;
-  drafts: InvoiceDraft[];
   adhocInvoices: AdhocInvoice[];
   selectedProplatitFiles: SelectedProplatitFile[];
-  userEditsRef: React.MutableRefObject<Map<string, DraftUserEdits>>;
-  setDrafts: React.Dispatch<React.SetStateAction<InvoiceDraft[]>>;
 }
 
 export interface UseInvoiceGenerationReturn {
@@ -35,18 +33,19 @@ export interface UseInvoiceGenerationReturn {
 
 export function useInvoiceGeneration({
   config,
-  drafts,
   adhocInvoices,
   selectedProplatitFiles,
-  userEditsRef,
-  setDrafts,
 }: UseInvoiceGenerationProps): UseInvoiceGenerationReturn {
 
   const handleGenerate = useCallback(async (draft: InvoiceDraft, isPreview: boolean = false): Promise<string | undefined> => {
     const ruleset = config.rulesets.find(r => r.id === draft.rulesetId);
     if (!ruleset) { alert("Ruleset not found"); return undefined; }
 
-    const isLastDraft = drafts[drafts.length - 1].id === draft.id;
+    // Read drafts non-reactively from the store: this callback only fires on
+    // explicit user action (click "Generate"), so subscribing here would just
+    // re-create the callback on every keystroke for no benefit.
+    const drafts = useGeneratorStore.getState().drafts;
+    const isLastDraft = drafts[drafts.length - 1]?.id === draft.id;
     const itemsToMove = (!isPreview && isLastDraft) ? selectedProplatitFiles : [];
 
     let day = "1";
@@ -121,9 +120,9 @@ export function useInvoiceGeneration({
             await moveProplatitFile(config.rootPath, item.file.name, config.projectStructure);
           }
         }
-        // Clean up user edits for this draft
-        userEditsRef.current.delete(draft.id);
-        setDrafts(ds => ds.map(d => d.id === draft.id ? { ...d, status: 'done' } : d));
+        const { removeUserEdit, markDraftDone } = useGeneratorStore.getState();
+        removeUserEdit(draft.id);
+        markDraftDone(draft.id);
       }
       
       return outputPath.replace('.odt', '.pdf');
@@ -132,7 +131,7 @@ export function useInvoiceGeneration({
       alert(`Error generating ${baseName}: ${e}`);
       return undefined;
     }
-  }, [config, drafts, selectedProplatitFiles, userEditsRef, setDrafts]);
+  }, [config, selectedProplatitFiles]);
 
   const handleGenerateAdhocInvoice = useCallback(async (invoice: AdhocInvoice): Promise<string | undefined> => {
     try {
@@ -203,12 +202,12 @@ export function useInvoiceGeneration({
       if (!adhocInvoice) return undefined;
       return handleGenerateAdhocInvoice(adhocInvoice);
     }
-    
-    // Regular draft
-    const draft = drafts.find(d => d.id === draftId);
+
+    // Regular draft — read from the store at call time (non-reactive).
+    const draft = useGeneratorStore.getState().drafts.find(d => d.id === draftId);
     if (!draft || draft.status === 'done') return undefined;
     return handleGenerate(draft, false);
-  }, [drafts, adhocInvoices, handleGenerate, handleGenerateAdhocInvoice]);
+  }, [adhocInvoices, handleGenerate, handleGenerateAdhocInvoice]);
 
   const handlePreview = useCallback(async (draft: InvoiceDraft) => {
     await modal.open(PDFPreviewModal, {

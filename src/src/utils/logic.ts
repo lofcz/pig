@@ -247,6 +247,20 @@ export async function getExistingInvoiceCount(
   return count;
 }
 
+// Absolute month index helpers: maps a (year, monthOneBased) pair to a single
+// monotonically increasing integer so iteration can cross year boundaries.
+export function absMonth(year: number, monthOneBased: number): number {
+  return year * 12 + (monthOneBased - 1);
+}
+
+export function yearFromAbs(mAbs: number): number {
+  return Math.floor(mAbs / 12);
+}
+
+export function monthFromAbs(mAbs: number): number {
+  return (mAbs % 12) + 1;
+}
+
 /**
  * Get the last invoiced month for a year
  */
@@ -328,4 +342,27 @@ export async function listYearFolders(
   }
   
   return years.sort((a, b) => b.year - a.year);
+}
+
+/**
+ * Get the globally latest invoiced month as an absolute month index, scanning
+ * every year folder. Returns null if no invoices exist anywhere.
+ */
+export async function getLastInvoicedMonthAbs(
+  rootPath: string,
+  structure: ProjectStructure = DEFAULT_PROJECT_STRUCTURE
+): Promise<number | null> {
+  const years = await listYearFolders(rootPath, structure);
+  let maxAbs: number | null = null;
+
+  for (const { year } of years) {
+    const yearShort = year.toString().slice(-2);
+    const lastM = await getLastInvoicedMonth(rootPath, yearShort, structure);
+    if (lastM > 0) {
+      const candidate = absMonth(year, lastM);
+      if (maxAbs === null || candidate > maxAbs) maxAbs = candidate;
+    }
+  }
+
+  return maxAbs;
 }

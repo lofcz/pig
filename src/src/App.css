@@ -1056,7 +1056,6 @@ select.select-sm {
 .card-hover:hover {
   box-shadow: var(--shadow-lg);
   border-color: var(--accent-200);
-  transform: translateY(-2px);
 }
 
 .dark .card-hover:hover {
@@ -1640,6 +1639,64 @@ tr:hover td {
   opacity: 1;
   visibility: visible;
   transform: translateX(-50%) translateY(-8px);
+}
+
+/* Portal-based tooltip (escapes overflow:hidden parents) */
+.tooltip-portal {
+  position: absolute;
+  z-index: 9999;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  background-color: var(--text-primary);
+  color: var(--bg-base);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+  animation: tooltip-in 140ms ease-out;
+}
+
+/* Origin-aware slide+fade per placement, so the tooltip animates from
+   the side of the anchor rather than always from the bottom. */
+.tooltip-portal[data-state="open"][data-placement^="top"]    { animation-name: tooltip-in-top; }
+.tooltip-portal[data-state="open"][data-placement^="bottom"] { animation-name: tooltip-in-bottom; }
+.tooltip-portal[data-state="open"][data-placement^="left"]   { animation-name: tooltip-in-left; }
+.tooltip-portal[data-state="open"][data-placement^="right"]  { animation-name: tooltip-in-right; }
+
+/* Fade-out plays just before the tooltip unmounts. Duration matches CLOSE_ANIM_MS. */
+.tooltip-portal[data-state="closing"] {
+  animation: tooltip-out 120ms ease-in forwards;
+}
+
+@keyframes tooltip-out {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(0.96); }
+}
+
+@keyframes tooltip-in-top {
+  from { opacity: 0; transform: translateY(4px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+@keyframes tooltip-in-bottom {
+  from { opacity: 0; transform: translateY(-4px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+@keyframes tooltip-in-left {
+  from { opacity: 0; transform: translateX(4px) scale(0.96); }
+  to   { opacity: 1; transform: translateX(0)   scale(1); }
+}
+@keyframes tooltip-in-right {
+  from { opacity: 0; transform: translateX(-4px) scale(0.96); }
+  to   { opacity: 1; transform: translateX(0)    scale(1); }
+}
+
+.tooltip-arrow {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background-color: var(--text-primary);
+  transform: rotate(45deg);
 }
 
 /* ============================================

@@ -150,8 +150,8 @@ export const API_PROVIDERS = {
     description: 'OpenAI models',
     placeholder: 'sk-...',
     docsUrl: 'https://platform.openai.com/api-keys',
-    defaultModel: 'gpt-4o',
-    modelPlaceholder: 'gpt-4o, gpt-4o-mini...',
+    defaultModel: 'gpt-5.4-mini',
+    modelPlaceholder: 'gpt-5.4-mini, gpt-5.4...',
   },
   anthropic: {
     name: 'Anthropic',
