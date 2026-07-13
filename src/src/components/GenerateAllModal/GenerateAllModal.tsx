@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { openPath } from '@tauri-apps/plugin-opener';
 
@@ -18,6 +18,7 @@ import { useEmailComposer } from './useEmailComposer';
 
 import GeneratingPhase from './GeneratingPhase';
 import CompletePhase from './CompletePhase';
+import GenerationFailedPhase from './GenerationFailedPhase';
 import EmailListPhase from './EmailListPhase';
 import EmailComposePhase from './EmailComposePhase';
 
@@ -43,7 +44,7 @@ export default function GenerateAllModal({
   extraFiles = []
 }: GenerateAllModalInternalProps) {
   const [phase, setPhase] = useState<ModalPhase>('generating');
-  const [hasSynced, setHasSynced] = useState(false);
+  const completionSyncedRef = useRef(false);
   // Initialize session invoices directly from props on mount
   const [sessionInvoices] = useState<InvoiceToGenerate[]>(() =>
     invoices.map(inv => ({
@@ -58,6 +59,10 @@ export default function GenerateAllModal({
     }))
   );
 
+  const handleGenerationFinished = useCallback((success: boolean) => {
+    setPhase(success ? 'complete' : 'failed');
+  }, []);
+
   // Generation process hook
   const {
     statuses,
@@ -67,7 +72,7 @@ export default function GenerateAllModal({
     phase,
     sessionInvoices,
     onGenerateInvoice,
-    onPhaseComplete: () => setPhase('complete'),
+    onPhaseComplete: handleGenerationFinished,
   });
 
   // Email tasks hook
@@ -130,11 +135,11 @@ export default function GenerateAllModal({
 
   // Sync data when entering complete phase
   useEffect(() => {
-    if (phase === 'complete' && !hasSynced) {
-      setHasSynced(true);
+    if (phase === 'complete' && !completionSyncedRef.current) {
+      completionSyncedRef.current = true;
       onComplete();
     }
-  }, [phase, hasSynced, onComplete]);
+  }, [phase, onComplete]);
 
   // Build result for onClose
   const buildResult = useCallback((): GenerateAllResult => ({
@@ -145,17 +150,14 @@ export default function GenerateAllModal({
   }), [generatedInvoices, sentCount, skippedCount]);
 
   const handleClose = useCallback(() => {
-    if (!hasSynced) {
-      onComplete();
-    }
     onClose(buildResult());
-  }, [hasSynced, onComplete, onClose, buildResult]);
+  }, [onClose, buildResult]);
 
   // Keyboard handler
   useEventListener({
     type: 'keydown',
     handler: useCallback((e: KeyboardEvent) => {
-      if (e.key === 'Escape' && (phase === 'complete' || phase === 'email-list')) {
+      if (e.key === 'Escape' && (phase === 'complete' || phase === 'failed' || phase === 'email-list')) {
         handleClose();
       }
     }, [phase, handleClose]),
@@ -247,6 +249,14 @@ export default function GenerateAllModal({
             onOpenFile={handleOpenFile}
             onOpenFolder={handleOpenFolder}
             onStartEmailFlow={handleStartEmailFlow}
+            onClose={handleClose}
+          />
+        )}
+
+        {phase === 'failed' && (
+          <GenerationFailedPhase
+            invoices={sessionInvoices}
+            statuses={statuses}
             onClose={handleClose}
           />
         )}

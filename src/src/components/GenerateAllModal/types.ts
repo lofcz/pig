@@ -32,10 +32,11 @@ export interface InvoiceStatus {
   id: string;
   status: 'pending' | 'generating' | 'done' | 'error';
   pdfPath?: string;
+  error?: string;
   justFinished?: boolean;
 }
 
-export type ModalPhase = 'generating' | 'complete' | 'email-list' | 'email-compose';
+export type ModalPhase = 'generating' | 'complete' | 'failed' | 'email-list' | 'email-compose';
 
 // Email task groups invoices by contact+template+connector
 export interface EmailTask {

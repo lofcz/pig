@@ -8,7 +8,11 @@ export * from './utils';
 export { useBaseDrafts, applyExtraValueToDrafts, mergeDraftsWithUserEdits } from './draftCalculation';
 
 // Adhoc invoice splitting
-export { getAdhocInvoiceParts } from './adhocSplit';
+export {
+  getAdhocInvoicePartCount,
+  getAdhocInvoiceParts,
+  normalizeAdhocVariableSymbol,
+} from './adhocSplit';
 export type { AdhocInvoicePart } from './adhocSplit';
 
 // Custom hooks

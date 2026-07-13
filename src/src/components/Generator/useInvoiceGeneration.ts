@@ -161,8 +161,8 @@ export function useInvoiceGeneration({
         return undefined;
       }
 
-      // Derive the part to generate. Unsplit invoices yield a single part that
-      // echoes the user's invoiceNo/variableSymbol/value unchanged.
+      // Derive the part to generate. Variable symbols are normalized to digits,
+      // and split parts receive unique zero-padded numeric suffixes.
       const parts = getAdhocInvoiceParts(invoice, config);
       const part = parts[partIndex];
       if (!part) {
@@ -185,7 +185,7 @@ export function useInvoiceGeneration({
         part.variableSymbol,
         issueDateStr,
         dueDateStr,
-        invoice.description,
+        part.description,
         amountStr
       );
 

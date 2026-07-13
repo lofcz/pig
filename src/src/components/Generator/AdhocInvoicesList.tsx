@@ -144,7 +144,9 @@ export function AdhocInvoicesList({
                     )}
                   </div>
                   <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                    {invoice.description}
+                    {isSplit
+                      ? `${parts.length} documents with independently configured descriptions`
+                      : parts[0]?.description}
                   </p>
                 </div>
                 <div className="flex w-full flex-shrink-0 items-center justify-between gap-2 sm:w-auto sm:justify-end">
@@ -237,6 +239,13 @@ export function AdhocInvoicesList({
                           <span className="text-xs" style={{ color: 'var(--text-subtle)' }}>
                             Variable symbol {part.variableSymbol}
                           </span>
+                          <p
+                            className="mt-0.5 truncate text-xs"
+                            style={{ color: 'var(--text-muted)' }}
+                            title={part.description}
+                          >
+                            {part.description || 'No description'}
+                          </p>
                         </div>
                         <span
                           className="ml-11 min-w-[8rem] flex-1 text-left text-sm font-mono font-semibold sm:ml-0 sm:flex-none sm:text-right"

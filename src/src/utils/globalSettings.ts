@@ -7,6 +7,8 @@
  */
 
 import { exists, stat } from '@tauri-apps/plugin-fs';
+import { platform } from '@tauri-apps/plugin-os';
+import { Command } from '@tauri-apps/plugin-shell';
 
 export type ThemePreference = 'light' | 'dark' | 'system';
 
@@ -106,7 +108,7 @@ export async function validateSofficeConfiguration(): Promise<SofficeConfigurati
   if (!path) {
     return {
       valid: false,
-      message: 'Preview requires LibreOffice. Configure soffice.exe in Settings → General.',
+      message: 'PDF generation requires LibreOffice. Configure soffice.exe in Settings → General.',
     };
   }
 
@@ -131,6 +133,36 @@ export async function validateSofficeConfiguration(): Promise<SofficeConfigurati
     return {
       valid: false,
       message: 'The configured LibreOffice path no longer exists. Update it in Settings → General.',
+    };
+  }
+
+  try {
+    const os = platform();
+    const escapedPath = os === 'windows'
+      ? path.replace(/'/g, "''")
+      : path.replace(/'/g, "'\\''");
+    const command = os === 'windows'
+      ? Command.create('powershell', [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `& '${escapedPath}' --headless --version`,
+        ])
+      : Command.create('sh', ['-c', `'${escapedPath}' --headless --version`]);
+    const output = await command.execute();
+    const versionOutput = `${output.stdout}\n${output.stderr}`;
+
+    if (output.code !== 0 || !/(LibreOffice|OpenOffice)/i.test(versionOutput)) {
+      return {
+        valid: false,
+        message: 'The configured file is not a working LibreOffice executable. Update it in Settings → General.',
+      };
+    }
+  } catch (error) {
+    console.warn('Failed to start configured LibreOffice:', error);
+    return {
+      valid: false,
+      message: 'LibreOffice could not be started. Check its path in Settings → General.',
     };
   }
 

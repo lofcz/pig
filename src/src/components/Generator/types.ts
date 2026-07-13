@@ -38,6 +38,8 @@ export interface AdhocInvoice {
   invoiceNo: string;
   variableSymbol: string;
   description: string;
+  /** Description for each generated part; index 0 is also used when unsplit. */
+  partDescriptions?: string[];
   supplierId: string;
   customerId: string;
   value: number;

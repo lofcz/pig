@@ -7,6 +7,8 @@ import { GenerateAllModalComponent } from './GenerateAllModal';
 import { useReimburseFiles } from '../hooks';
 import { useProjectWatcher } from '../contexts/ProjectWatcherContext';
 import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { validateSofficeConfiguration } from '../utils/globalSettings';
 import {
   useGeneratorStore,
   useDraftCount,
@@ -22,6 +24,7 @@ import {
   useBaseDrafts,
   applyExtraValueToDrafts,
   getAdhocInvoiceParts,
+  normalizeAdhocVariableSymbol,
   useAdhocInvoices,
   useExtraItemsAnalysis,
   useInvoiceGeneration,
@@ -105,6 +108,7 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
     companies: config.companies,
     primaryCurrency: config.primaryCurrency,
     rulesets: config.rulesets,
+    rootPath: config.rootPath,
   });
 
   const {
@@ -224,8 +228,7 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
       loadProplatitFiles(),
       reloadLastInvoicedMonth()
     ]);
-    resumeWatching();
-  }, [clearAdhocInvoices, loadProplatitFiles, reloadLastInvoicedMonth, resumeWatching, clearOverrides, clearUserEdits]);
+  }, [clearAdhocInvoices, loadProplatitFiles, reloadLastInvoicedMonth, clearOverrides, clearUserEdits]);
 
   const buildInvoiceSnapshots = useCallback(() => {
     // Read drafts non-reactively — this callback only runs when the user
@@ -300,7 +303,7 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
           invoiceNo: part.invoiceNo,
           issueDate: issueDateStr,
           dueDate: dueDateStr,
-          description: inv.description,
+          description: part.description,
         },
         sortKey,
         kind: 1,
@@ -324,17 +327,35 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
   }, [selectedProplatitFiles]);
 
   const openGenerateAllModal = useCallback(async () => {
+    const invalidAdhocInvoice = adhocInvoices.find(invoice =>
+      !normalizeAdhocVariableSymbol(invoice.variableSymbol, invoice.invoiceNo)
+    );
+    if (invalidAdhocInvoice) {
+      toast.error(`${invalidAdhocInvoice.name} needs a numeric variable symbol before generation.`);
+      return;
+    }
+
+    const sofficeConfiguration = await validateSofficeConfiguration();
+    if (!sofficeConfiguration.valid) {
+      toast.error(sofficeConfiguration.message);
+      return;
+    }
+
     pauseWatching();
-    await modal.open(GenerateAllModalComponent, {
-      config,
-      invoices: buildInvoiceSnapshots(),
-      extraFiles: buildExtraFilesSnapshots(),
-      primaryCurrency: config.primaryCurrency,
-      rootPath: config.rootPath,
-      onGenerateInvoice: handleGenerateById,
-      onComplete: handleGenerateAllComplete,
-    });
-  }, [config, buildInvoiceSnapshots, buildExtraFilesSnapshots, handleGenerateById, handleGenerateAllComplete, pauseWatching]);
+    try {
+      await modal.open(GenerateAllModalComponent, {
+        config,
+        invoices: buildInvoiceSnapshots(),
+        extraFiles: buildExtraFilesSnapshots(),
+        primaryCurrency: config.primaryCurrency,
+        rootPath: config.rootPath,
+        onGenerateInvoice: handleGenerateById,
+        onComplete: handleGenerateAllComplete,
+      });
+    } finally {
+      resumeWatching();
+    }
+  }, [adhocInvoices, config, buildInvoiceSnapshots, buildExtraFilesSnapshots, handleGenerateById, handleGenerateAllComplete, pauseWatching, resumeWatching]);
 
   const totalDraftValue = draftsTotal + adhocTotal;
   const hasActiveInvoices = draftCount > 0 || adhocInvoices.length > 0;

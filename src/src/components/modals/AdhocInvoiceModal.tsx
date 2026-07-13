@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import {
@@ -9,13 +9,18 @@ import {
   Pencil,
   X,
   Banknote,
-  Layers
+  Layers,
+  Dices
 } from 'lucide-react';
-import { findOption, Select, SelectOption } from '../Select';
+import { findOption, Select, SelectOption, CreatableSelect } from '../Select';
 import { DatePicker } from '../DatePicker';
 import { FormattedNumberInput } from '../FormattedNumberInput';
 import { CompanyDetails, Ruleset } from '../../types';
 import { ModalComponent, modal } from '../../contexts/ModalContext';
+import {
+  getAdhocInvoicePartCount,
+  normalizeAdhocVariableSymbol,
+} from '../Generator/adhocSplit';
 
 // Re-export this type for convenience (used in Generator types too)
 export interface AdhocInvoice {
@@ -24,6 +29,7 @@ export interface AdhocInvoice {
   invoiceNo: string;
   variableSymbol: string;
   description: string;
+  partDescriptions?: string[];
   supplierId: string;
   customerId: string;
   value: number;
@@ -40,6 +46,80 @@ export interface AdhocInvoiceModalProps {
   rulesets: Ruleset[];
   editingInvoice?: AdhocInvoice;
 }
+
+interface PartDescriptionFieldProps {
+  partIndex: number;
+  totalCount: number;
+  value: string;
+  options: SelectOption[];
+  onChange: (partIndex: number, value: string) => void;
+  onRandomize: (partIndex: number) => void;
+}
+
+function pickRandomDescription(descriptions: string[], current = ''): string {
+  if (descriptions.length === 0) return current;
+  const alternatives = descriptions.filter(description => description !== current);
+  const pool = alternatives.length > 0 ? alternatives : descriptions;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function formatCreateDescription(inputValue: string): string {
+  return `Use "${inputValue}"`;
+}
+
+const PartDescriptionField = memo(function PartDescriptionField({
+  partIndex,
+  totalCount,
+  value,
+  options,
+  onChange,
+  onRandomize,
+}: PartDescriptionFieldProps) {
+  const selectedOption = useMemo(
+    () => findOption(options, value) || (value ? { value, label: value } : null),
+    [options, value]
+  );
+
+  const handleChange = useCallback((option: SelectOption | null) => {
+    onChange(partIndex, option?.value || '');
+  }, [onChange, partIndex]);
+
+  const handleRandomize = useCallback(() => {
+    onRandomize(partIndex);
+  }, [onRandomize, partIndex]);
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-2">
+        <label
+          className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          <FileText size={14} />
+          {totalCount > 1 ? `Description · Part ${partIndex + 1} of ${totalCount}` : 'Description'}
+        </label>
+        <button
+          type="button"
+          onClick={handleRandomize}
+          disabled={options.length === 0}
+          className="ml-auto inline-flex shrink-0 rounded-md p-1 transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-35 dark:hover:bg-white/10"
+          title={options.length > 0 ? 'Randomize description' : 'The selected ruleset has no description presets'}
+          aria-label={`Randomize description${totalCount > 1 ? ` for part ${partIndex + 1}` : ''}`}
+        >
+          <Dices size={15} />
+        </button>
+      </div>
+      <CreatableSelect
+        value={selectedOption}
+        onChange={handleChange}
+        options={options}
+        isClearable
+        placeholder="Select or type a description..."
+        formatCreateLabel={formatCreateDescription}
+      />
+    </div>
+  );
+});
 
 /**
  * Modal for creating/editing adhoc invoices.
@@ -74,22 +154,100 @@ export const AdhocInvoiceModal: ModalComponent<AdhocInvoiceModalProps, Omit<Adho
   
   const [name, setName] = useState(editingInvoice?.name || '');
   const [invoiceNo, setInvoiceNo] = useState(editingInvoice?.invoiceNo || '');
-  const [variableSymbol, setVariableSymbol] = useState(editingInvoice?.variableSymbol || '');
+  const [variableSymbol, setVariableSymbol] = useState(() =>
+    normalizeAdhocVariableSymbol(editingInvoice?.variableSymbol || '', editingInvoice?.invoiceNo || '')
+  );
   const [vsManuallyEdited, setVsManuallyEdited] = useState(isEditMode);
-  const [description, setDescription] = useState(editingInvoice?.description || '');
+  const [partDescriptions, setPartDescriptions] = useState<string[]>(() =>
+    editingInvoice?.partDescriptions?.length
+      ? editingInvoice.partDescriptions
+      : [editingInvoice?.description || '']
+  );
   const [supplierId, setSupplierId] = useState(editingInvoice?.supplierId || '');
   const [customerId, setCustomerId] = useState(editingInvoice?.customerId || '');
   const [value, setValue] = useState(editingInvoice?.value?.toString() || '');
   const [issueDate, setIssueDate] = useState(editingInvoice?.issueDate || defaultIssueDate);
   const [dueDate, setDueDate] = useState(editingInvoice?.dueDate || defaultDueDate);
   const [rulesetId, setRulesetId] = useState(editingInvoice?.rulesetId || '');
+  const selectedRuleset = useMemo(
+    () => rulesets.find(ruleset => ruleset.id === rulesetId),
+    [rulesetId, rulesets]
+  );
+  const descriptionPresets = useMemo(
+    () => selectedRuleset?.descriptions?.filter(Boolean) || [],
+    [selectedRuleset]
+  );
+  const descriptionOptions = useMemo(
+    () => descriptionPresets.map(description => ({ value: description, label: description })),
+    [descriptionPresets]
+  );
+  const partCount = useMemo(
+    () => getAdhocInvoicePartCount(Number(value), selectedRuleset),
+    [selectedRuleset, value]
+  );
 
   // Auto-set VS when invoice number changes (if VS hasn't been manually edited)
   useEffect(() => {
     if (!vsManuallyEdited && invoiceNo) {
-      setVariableSymbol(invoiceNo);
+      setVariableSymbol(normalizeAdhocVariableSymbol('', invoiceNo));
     }
   }, [invoiceNo, vsManuallyEdited]);
+
+  const handleInvoiceNoChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setInvoiceNo(event.target.value);
+  }, []);
+
+  const handleVariableSymbolChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setVariableSymbol(event.target.value.replace(/\D/g, ''));
+    setVsManuallyEdited(true);
+  }, []);
+
+  useEffect(() => {
+    setPartDescriptions(previous => {
+      if (previous.length === partCount) return previous;
+      return Array.from(
+        { length: partCount },
+        (_, index) => previous[index] ?? pickRandomDescription(descriptionPresets)
+      );
+    });
+  }, [descriptionPresets, partCount]);
+
+  const handleRulesetChange = useCallback((option: SelectOption | null) => {
+    const nextRulesetId = option?.value || '';
+    const nextRuleset = rulesets.find(ruleset => ruleset.id === nextRulesetId);
+    const nextPresets = nextRuleset?.descriptions?.filter(Boolean) || [];
+    const nextPartCount = getAdhocInvoicePartCount(Number(value), nextRuleset);
+
+    setRulesetId(nextRulesetId);
+    if (nextPresets.length > 0) {
+      setPartDescriptions(
+        Array.from({ length: nextPartCount }, () => pickRandomDescription(nextPresets))
+      );
+    } else {
+      setPartDescriptions(previous =>
+        Array.from({ length: nextPartCount }, (_, index) => previous[index] || '')
+      );
+    }
+  }, [rulesets, value]);
+
+  const handlePartDescriptionChange = useCallback((partIndex: number, nextValue: string) => {
+    setPartDescriptions(previous =>
+      Array.from(
+        { length: Math.max(partCount, previous.length) },
+        (_, index) => index === partIndex ? nextValue : previous[index] || ''
+      )
+    );
+  }, [partCount]);
+
+  const handleRandomizeDescription = useCallback((partIndex: number) => {
+    setPartDescriptions(previous =>
+      previous.map((description, index) =>
+        index === partIndex
+          ? pickRandomDescription(descriptionPresets, description)
+          : description
+      )
+    );
+  }, [descriptionPresets]);
 
   const suppliers = companies.filter(c => c.isSupplier);
   const customers = companies.filter(c => !c.isSupplier);
@@ -123,12 +281,17 @@ export const AdhocInvoiceModal: ModalComponent<AdhocInvoiceModalProps, Omit<Adho
       toast.error('Please fill in all required fields');
       return;
     }
+    if (!variableSymbol || !/^\d+$/.test(variableSymbol)) {
+      toast.error('Variable symbol must contain numbers only');
+      return;
+    }
 
     resolve({
       name,
       invoiceNo,
-      variableSymbol: variableSymbol || invoiceNo,
-      description,
+      variableSymbol,
+      description: partDescriptions[0] || '',
+      partDescriptions: partDescriptions.slice(0, partCount),
       supplierId,
       customerId,
       value: numValue,
@@ -238,7 +401,7 @@ export const AdhocInvoiceModal: ModalComponent<AdhocInvoiceModalProps, Omit<Adho
               <input
                 type="text"
                 value={invoiceNo}
-                onChange={e => setInvoiceNo(e.target.value)}
+                onChange={handleInvoiceNoChange}
                 placeholder="Invoice number"
                 className="w-full font-mono"
               />
@@ -253,33 +416,14 @@ export const AdhocInvoiceModal: ModalComponent<AdhocInvoiceModalProps, Omit<Adho
               </label>
               <input
                 type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 value={variableSymbol}
-                onChange={e => {
-                  setVariableSymbol(e.target.value);
-                  setVsManuallyEdited(true);
-                }}
-                placeholder="Variable symbol"
+                onChange={handleVariableSymbolChange}
+                placeholder="Numbers only"
                 className="w-full font-mono"
               />
             </div>
-          </div>
-
-          {/* Description */}
-          <div>
-            <label 
-              className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide mb-2"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              <FileText size={14} />
-              Description
-            </label>
-            <input
-              type="text"
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              placeholder="Invoice description"
-              className="w-full"
-            />
           </div>
 
           {/* Issue Date / Due Date */}
@@ -357,7 +501,7 @@ export const AdhocInvoiceModal: ModalComponent<AdhocInvoiceModalProps, Omit<Adho
             </label>
             <Select
               value={findOption(rulesetOptions, rulesetId)}
-              onChange={opt => setRulesetId(opt ? opt.value : '')}
+              onChange={handleRulesetChange}
               options={rulesetOptions}
               isClearable
               placeholder="None — standalone invoice"
@@ -403,6 +547,37 @@ export const AdhocInvoiceModal: ModalComponent<AdhocInvoiceModalProps, Omit<Adho
                 {primaryCurrency}
               </span>
             </div>
+          </div>
+
+          {/* Per-document descriptions */}
+          <div
+            className="space-y-4 rounded-xl border p-4"
+            style={{
+              borderColor: 'var(--border-default)',
+              backgroundColor: 'var(--bg-muted)',
+            }}
+          >
+            <div>
+              <h4 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                {partCount > 1 ? 'Descriptions for generated parts' : 'Invoice description'}
+              </h4>
+              <p className="mt-0.5 text-xs" style={{ color: 'var(--text-subtle)' }}>
+                {descriptionPresets.length > 0
+                  ? 'Defaults are randomized from the parent ruleset. Each document can be changed independently.'
+                  : 'Select or type the description used in the generated document.'}
+              </p>
+            </div>
+            {Array.from({ length: partCount }, (_, partIndex) => (
+              <PartDescriptionField
+                key={partIndex}
+                partIndex={partIndex}
+                totalCount={partCount}
+                value={partDescriptions[partIndex] || ''}
+                options={descriptionOptions}
+                onChange={handlePartDescriptionChange}
+                onRandomize={handleRandomizeDescription}
+              />
+            ))}
           </div>
 
           {/* Actions */}

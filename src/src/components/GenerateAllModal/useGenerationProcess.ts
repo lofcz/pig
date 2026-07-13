@@ -5,7 +5,7 @@ interface UseGenerationProcessProps {
   phase: ModalPhase;
   sessionInvoices: InvoiceToGenerate[];
   onGenerateInvoice: (id: string) => Promise<string | undefined>;
-  onPhaseComplete: () => void;
+  onPhaseComplete: (success: boolean) => void;
 }
 
 interface UseGenerationProcessReturn {
@@ -29,13 +29,16 @@ export function useGenerationProcess({
   const [generatedInvoices, setGeneratedInvoices] = useState<GeneratedInvoice[]>([]);
   const isGeneratingRef = useRef(false);
   const markedGeneratingIndexRef = useRef(-1);
+  const isFinishedRef = useRef(false);
 
   // Main generation loop
   useEffect(() => {
     if (phase !== 'generating' || sessionInvoices.length === 0) return;
     if (currentIndex >= sessionInvoices.length) {
+      if (isFinishedRef.current) return;
+      isFinishedRef.current = true;
       setFakeProgress(100);
-      setTimeout(() => onPhaseComplete(), 500);
+      setTimeout(() => onPhaseComplete(true), 500);
       return;
     }
     // Prevent concurrent generation
@@ -56,7 +59,19 @@ export function useGenerationProcess({
 
       try {
         const pdfPath = await onGenerateInvoice(invoice.id);
-        
+
+        if (!pdfPath) {
+          setStatuses(prev => prev.map(s =>
+            s.id === invoice.id
+              ? { ...s, status: 'error', error: 'No PDF was created.' }
+              : s
+          ));
+          isGeneratingRef.current = false;
+          isFinishedRef.current = true;
+          onPhaseComplete(false);
+          return;
+        }
+
         setStatuses(prev => prev.map(s => 
           s.id === invoice.id ? { ...s, status: 'done', pdfPath, justFinished: true } : s
         ));
@@ -67,29 +82,34 @@ export function useGenerationProcess({
           ));
         }, 1300);
 
-        if (pdfPath) {
-          setGeneratedInvoices(prev => [...prev, {
-            id: invoice.id,
-            label: invoice.label,
-            amount: invoice.amount,
-            pdfPath,
-            customerId: invoice.customerId,
-            invoiceNo: invoice.invoiceNo,
-            issueDate: invoice.issueDate,
-            dueDate: invoice.dueDate,
-            description: invoice.description,
-          }]);
-        }
+        setGeneratedInvoices(prev => [...prev, {
+          id: invoice.id,
+          label: invoice.label,
+          amount: invoice.amount,
+          pdfPath,
+          customerId: invoice.customerId,
+          invoiceNo: invoice.invoiceNo,
+          issueDate: invoice.issueDate,
+          dueDate: invoice.dueDate,
+          description: invoice.description,
+        }]);
 
         isGeneratingRef.current = false;
         setCurrentIndex(prev => prev + 1);
       } catch (error) {
         console.error('Generation error:', error);
-        setStatuses(prev => prev.map(s => 
-          s.id === invoice.id ? { ...s, status: 'error' } : s
+        setStatuses(prev => prev.map(s =>
+          s.id === invoice.id
+            ? {
+                ...s,
+                status: 'error',
+                error: error instanceof Error ? error.message : 'Generation failed.',
+              }
+            : s
         ));
         isGeneratingRef.current = false;
-        setCurrentIndex(prev => prev + 1);
+        isFinishedRef.current = true;
+        onPhaseComplete(false);
       }
     };
 
