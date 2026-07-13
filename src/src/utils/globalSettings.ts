@@ -7,8 +7,7 @@
  */
 
 import { exists, stat } from '@tauri-apps/plugin-fs';
-import { platform } from '@tauri-apps/plugin-os';
-import { Command } from '@tauri-apps/plugin-shell';
+import { invoke } from '@tauri-apps/api/core';
 
 export type ThemePreference = 'light' | 'dark' | 'system';
 
@@ -137,32 +136,12 @@ export async function validateSofficeConfiguration(): Promise<SofficeConfigurati
   }
 
   try {
-    const os = platform();
-    const escapedPath = os === 'windows'
-      ? path.replace(/'/g, "''")
-      : path.replace(/'/g, "'\\''");
-    const command = os === 'windows'
-      ? Command.create('powershell', [
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          `& '${escapedPath}' --headless --version`,
-        ])
-      : Command.create('sh', ['-c', `'${escapedPath}' --headless --version`]);
-    const output = await command.execute();
-    const versionOutput = `${output.stdout}\n${output.stderr}`;
-
-    if (output.code !== 0 || !/(LibreOffice|OpenOffice)/i.test(versionOutput)) {
-      return {
-        valid: false,
-        message: 'The configured file is not a working LibreOffice executable. Update it in Settings → General.',
-      };
-    }
+    await invoke('validate_soffice', { path });
   } catch (error) {
-    console.warn('Failed to start configured LibreOffice:', error);
+    console.warn('Configured LibreOffice validation failed:', error);
     return {
       valid: false,
-      message: 'LibreOffice could not be started. Check its path in Settings → General.',
+      message: `${String(error)} Check its path in Settings → General.`,
     };
   }
 

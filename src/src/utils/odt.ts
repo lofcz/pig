@@ -1,7 +1,6 @@
 import JSZip from 'jszip';
-import { exists, readFile, remove, stat, writeFile } from '@tauri-apps/plugin-fs';
-import { Command } from '@tauri-apps/plugin-shell';
-import { platform } from '@tauri-apps/plugin-os';
+import { readFile, writeFile } from '@tauri-apps/plugin-fs';
+import { invoke } from '@tauri-apps/api/core';
 
 interface TextNode {
   node: Text;
@@ -216,44 +215,13 @@ export async function generateInvoiceOdt(
 }
 
 export async function convertToPdf(odtPath: string, outputDir: string, sofficePath?: string): Promise<void> {
-  console.log(`Converting ${odtPath} to PDF in ${outputDir}`);
-  const soffice = sofficePath || 'soffice';
-  const os = platform();
-  const pdfPath = odtPath.replace(/\.odt$/i, '.pdf');
-
-  // Never mistake an old preview for output from the current conversion.
-  if (await exists(pdfPath)) {
-    await remove(pdfPath);
-  }
-  
-  const command = os === 'windows'
-    ? Command.create('powershell', [
-        '-NoProfile',
-        '-Command',
-        `& '${soffice}' --headless --nologo --nodefault --norestore --convert-to pdf '${odtPath}' --outdir '${outputDir}'`
-      ])
-    : Command.create('sh', [
-        '-c',
-        `'${soffice}' --headless --nologo --nodefault --norestore --convert-to pdf '${odtPath}' --outdir '${outputDir}'`
-      ]);
-  
-  const output = await command.execute();
-  if (output.code !== 0) {
-    console.error("LibreOffice conversion failed:", output.stderr);
-    throw new Error(`Conversion failed: ${output.stderr}`);
+  if (!sofficePath) {
+    throw new Error('LibreOffice is not configured. Set soffice.exe in Settings → General.');
   }
 
-  if (!(await exists(pdfPath))) {
-    const details = output.stderr.trim() || output.stdout.trim();
-    throw new Error(
-      details
-        ? `LibreOffice did not create the PDF: ${details}`
-        : 'LibreOffice finished without creating a PDF. Check the configured executable and template.'
-    );
-  }
-
-  const pdfInfo = await stat(pdfPath);
-  if (!pdfInfo.isFile || pdfInfo.size === 0) {
-    throw new Error('LibreOffice created an empty or invalid PDF. Check the template and try again.');
-  }
+  await invoke<string>('convert_odt_to_pdf', {
+    sofficePath,
+    odtPath,
+    outputDir,
+  });
 }
