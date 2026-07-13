@@ -43,4 +43,7 @@ export interface AdhocInvoice {
   value: number;
   issueDate: string; // ISO date string YYYY-MM-DD
   dueDate: string;   // ISO date string YYYY-MM-DD
+  // Optional parent ruleset. When set and the ruleset has maxInvoiceValue,
+  // the invoice auto-splits into max-value chunks + remainder (see adhocSplit.ts).
+  rulesetId?: string;
 }

@@ -7,6 +7,10 @@ export * from './utils';
 // Draft calculation functions
 export { useBaseDrafts, applyExtraValueToDrafts, mergeDraftsWithUserEdits } from './draftCalculation';
 
+// Adhoc invoice splitting
+export { getAdhocInvoiceParts } from './adhocSplit';
+export type { AdhocInvoicePart } from './adhocSplit';
+
 // Custom hooks
 export { useAdhocInvoices } from './useAdhocInvoices';
 export type { UseAdhocInvoicesProps, UseAdhocInvoicesReturn } from './useAdhocInvoices';

@@ -22,7 +22,7 @@ export const MissingFilesModal: React.FC<MissingFilesModalProps> = ({
       style={{ animation: 'opacityFadeIn 0.2s ease-out forwards' }}
     >
       <div 
-        className="w-full max-w-md p-6 rounded-2xl shadow-xl border"
+        className="modal-content w-full max-w-md p-6 rounded-2xl shadow-xl border"
         style={{ 
           backgroundColor: 'var(--bg-surface)',
           borderColor: 'var(--border-default)',

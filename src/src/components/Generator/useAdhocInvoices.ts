@@ -1,11 +1,12 @@
 import { useState, useCallback } from 'react';
 import { AdhocInvoice } from './types';
 import { AdhocInvoiceModal } from '../modals/AdhocInvoiceModal';
-import { CompanyDetails } from '../../types';
+import { CompanyDetails, Ruleset } from '../../types';
 
 export interface UseAdhocInvoicesProps {
   companies: CompanyDetails[];
   primaryCurrency: string;
+  rulesets: Ruleset[];
 }
 
 export interface UseAdhocInvoicesReturn {
@@ -17,11 +18,11 @@ export interface UseAdhocInvoicesReturn {
   adhocTotal: number;
 }
 
-export function useAdhocInvoices({ companies, primaryCurrency }: UseAdhocInvoicesProps): UseAdhocInvoicesReturn {
+export function useAdhocInvoices({ companies, primaryCurrency, rulesets }: UseAdhocInvoicesProps): UseAdhocInvoicesReturn {
   const [adhocInvoices, setAdhocInvoices] = useState<AdhocInvoice[]>([]);
 
   const openAddAdhocModal = useCallback(async () => {
-    const result = await AdhocInvoiceModal.create({ companies, primaryCurrency });
+    const result = await AdhocInvoiceModal.create({ companies, primaryCurrency, rulesets });
     if (result) {
       const newInvoice: AdhocInvoice = {
         ...result,
@@ -29,16 +30,16 @@ export function useAdhocInvoices({ companies, primaryCurrency }: UseAdhocInvoice
       };
       setAdhocInvoices(prev => [...prev, newInvoice]);
     }
-  }, [companies, primaryCurrency]);
+  }, [companies, primaryCurrency, rulesets]);
 
   const openEditAdhocModal = useCallback(async (invoice: AdhocInvoice) => {
-    const result = await AdhocInvoiceModal.edit({ companies, primaryCurrency, invoice });
+    const result = await AdhocInvoiceModal.edit({ companies, primaryCurrency, rulesets, invoice });
     if (result) {
-      setAdhocInvoices(prev => prev.map(inv => 
+      setAdhocInvoices(prev => prev.map(inv =>
         inv.id === invoice.id ? { ...result, id: invoice.id } : inv
       ));
     }
-  }, [companies, primaryCurrency]);
+  }, [companies, primaryCurrency, rulesets]);
 
   const handleRemoveAdhocInvoice = useCallback((id: string) => {
     setAdhocInvoices(prev => prev.filter(inv => inv.id !== id));

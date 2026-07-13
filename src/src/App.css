@@ -1600,15 +1600,50 @@ tr:hover td {
   align-items: center;
   justify-content: center;
   padding: 1rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .modal-content {
   background-color: var(--card-bg);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-xl);
-  max-height: 90vh;
-  overflow: hidden;
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
   animation: scaleIn 0.2s ease-out;
+}
+
+.modal-content::-webkit-scrollbar,
+.modal-scroll-area::-webkit-scrollbar,
+.generate-all-content::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.modal-content::-webkit-scrollbar-track,
+.modal-scroll-area::-webkit-scrollbar-track,
+.generate-all-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-content::-webkit-scrollbar-thumb,
+.modal-scroll-area::-webkit-scrollbar-thumb,
+.generate-all-content::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border: 2px solid transparent;
+  border-radius: var(--radius-full);
+  background-clip: padding-box;
+}
+
+.modal-scroll-area {
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
 /* Tooltip */
@@ -1742,7 +1777,13 @@ tr:hover td {
     0 25px 50px -12px rgba(0, 0, 0, 0.5),
     0 0 0 1px rgba(255, 255, 255, 0.1);
   animation: scaleIn 0.3s ease-out;
-  overflow: hidden;
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
 .generate-all-generating,

@@ -10,6 +10,7 @@ import { ConfirmModal } from './modals/ConfirmModal';
 import { useEventListener } from '../hooks';
 import { DatePicker } from './DatePicker';
 import { Select, SelectOption, findOption } from './Select';
+import { FormattedNumberInput } from './FormattedNumberInput';
 import {
   FolderOpen,
   Layers,
@@ -211,7 +212,6 @@ function RulesetCard({ ruleset, index, isExpanded, companies, primaryCurrency, o
   const periodicityCustomRef = useRef<HTMLInputElement>(null);
   const entitlementDayRef = useRef<HTMLInputElement>(null);
   const dueDateOffsetRef = useRef<HTMLInputElement>(null);
-  const maxInvoiceValueRef = useRef<HTMLInputElement>(null);
   
   const commitField = useCallback((field: keyof Ruleset, value: any) => {
     onUpdate(index, { [field]: value });
@@ -220,6 +220,12 @@ function RulesetCard({ ruleset, index, isExpanded, companies, primaryCurrency, o
   const commitNumberField = useCallback((field: keyof Ruleset, ref: React.RefObject<HTMLInputElement | null>) => {
     if (ref.current) {
       commitField(field, Number(ref.current.value));
+    }
+  }, [commitField]);
+
+  const handleMaxInvoiceValueCommit = useCallback((value: number | null) => {
+    if (value !== null && value >= 1) {
+      commitField('maxInvoiceValue', value);
     }
   }, [commitField]);
 
@@ -362,14 +368,11 @@ function RulesetCard({ ruleset, index, isExpanded, companies, primaryCurrency, o
             >
               Max value per invoice ({primaryCurrency})
             </label>
-            <input 
-              ref={maxInvoiceValueRef}
-              type="number"
+            <FormattedNumberInput
               className="max-w-[200px]"
               defaultValue={ruleset.maxInvoiceValue}
-              onBlur={() => commitNumberField('maxInvoiceValue', maxInvoiceValueRef)}
+              onValueCommit={handleMaxInvoiceValueCommit}
               placeholder="90000"
-              min={1}
             />
             <p className="text-xs mt-1" style={{ color: 'var(--text-subtle)' }}>
               Invoices exceeding this amount will be split into multiple documents
@@ -914,46 +917,59 @@ interface SalaryRowProps {
 }
 
 function SalaryRow({ rule, index, onUpdate, onRemove }: SalaryRowProps) {
-  const valueRef = useRef<HTMLInputElement>(null);
-  const deductionRef = useRef<HTMLInputElement>(null);
-  
+  const handleStartDateChange = useCallback((value: string) => {
+    onUpdate(index, 'startDate', value);
+  }, [index, onUpdate]);
+
+  const handleEndDateChange = useCallback((value: string) => {
+    onUpdate(index, 'endDate', value);
+  }, [index, onUpdate]);
+
+  const handleValueCommit = useCallback((value: number | null) => {
+    if (value !== null) onUpdate(index, 'value', value);
+  }, [index, onUpdate]);
+
+  const handleDeductionCommit = useCallback((value: number | null) => {
+    if (value !== null) onUpdate(index, 'deduction', value);
+  }, [index, onUpdate]);
+
+  const handleRemove = useCallback(() => {
+    onRemove(index);
+  }, [index, onRemove]);
+
   return (
     <tr>
       <td>
         <DatePicker
           value={rule.startDate}
-          onChange={(val) => onUpdate(index, 'startDate', val)}
+          onChange={handleStartDateChange}
           placeholder="Start"
         />
       </td>
       <td>
         <DatePicker
           value={rule.endDate}
-          onChange={(val) => onUpdate(index, 'endDate', val)}
+          onChange={handleEndDateChange}
           placeholder="End"
         />
       </td>
       <td>
-        <input 
-          ref={valueRef}
-          type="number" 
-          defaultValue={rule.value} 
-          onBlur={() => valueRef.current && onUpdate(index, 'value', Number(valueRef.current.value))}
+        <FormattedNumberInput
+          defaultValue={rule.value}
+          onValueCommit={handleValueCommit}
           placeholder="0"
         />
       </td>
       <td>
-        <input 
-          ref={deductionRef}
-          type="number" 
-          defaultValue={rule.deduction} 
-          onBlur={() => deductionRef.current && onUpdate(index, 'deduction', Number(deductionRef.current.value))}
+        <FormattedNumberInput
+          defaultValue={rule.deduction}
+          onValueCommit={handleDeductionCommit}
           placeholder="0"
         />
       </td>
       <td>
         <button 
-          onClick={() => onRemove(index)} 
+          onClick={handleRemove}
           className="btn btn-ghost btn-icon"
           style={{ color: 'var(--error-500)' }}
         >

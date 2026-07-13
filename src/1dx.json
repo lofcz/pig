@@ -1,0 +1,43 @@
+{
+  "variables": {
+    "frontendPort": 1420
+  },
+  "project": {
+    "name": "pig",
+    "packageManager": "bun",
+    "frontendUrl": "http://localhost:${frontendPort}"
+  },
+  "startup": {
+    "autoInstallDependencies": true,
+    "autoOpenFrontend": false,
+    "frontendServiceId": "tauri"
+  },
+  "services": [
+    {
+      "id": "tauri",
+      "title": "Tauri dev (Vite + Rust)",
+      "color": "green",
+      "health": { "type": "port", "port": "${frontendPort}" },
+      "start": {
+        "shellCommand": "bun run tauri dev",
+        "manualCommand": "bun run tauri dev"
+      },
+      "startPolicy": "if-dead",
+      "onPortInUse": "kill",
+      "cleanup": {
+        "ports": [1420],
+        "commandLineContains": ["tauri dev", "vite", "cargo"]
+      }
+    }
+  ],
+  "actions": [
+    { "id": "start-dead", "label": "Start dead services", "shortcut": "1", "mode": "internal", "builtIn": "start-dead" },
+    { "id": "stop", "label": "Stop all services", "shortcut": "2", "mode": "internal", "builtIn": "stop-services" },
+    { "id": "refresh", "label": "Refresh status", "shortcut": "3", "mode": "internal", "builtIn": "refresh" },
+    { "id": "frontend", "label": "Open Vite dev server in browser", "shortcut": "f", "mode": "internal", "builtIn": "open-frontend" },
+    { "id": "typecheck", "label": "Run typecheck", "shortcut": "c", "mode": "external", "command": "bun", "args": ["run", "typecheck"] },
+    { "id": "install-deps", "label": "Install deps", "shortcut": "i", "mode": "inline", "command": "bun", "args": ["install"] },
+    { "id": "terminal", "label": "Open new terminal", "shortcut": "t", "mode": "internal", "builtIn": "new-terminal" },
+    { "id": "exit", "label": "Exit monitor", "shortcut": "q", "mode": "internal", "builtIn": "exit" }
+  ]
+}

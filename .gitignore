@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+*.tsbuildinfo
 
 # Editor directories and files
 .vscode/*
@@ -30,3 +31,4 @@ src-tauri/cfg.json
 /src/src/templates
 /tools
 *.enc
+/src/.1dx

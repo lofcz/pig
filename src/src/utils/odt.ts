@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import { readFile, writeFile } from '@tauri-apps/plugin-fs';
+import { exists, readFile, remove, stat, writeFile } from '@tauri-apps/plugin-fs';
 import { Command } from '@tauri-apps/plugin-shell';
 import { platform } from '@tauri-apps/plugin-os';
 
@@ -219,6 +219,12 @@ export async function convertToPdf(odtPath: string, outputDir: string, sofficePa
   console.log(`Converting ${odtPath} to PDF in ${outputDir}`);
   const soffice = sofficePath || 'soffice';
   const os = platform();
+  const pdfPath = odtPath.replace(/\.odt$/i, '.pdf');
+
+  // Never mistake an old preview for output from the current conversion.
+  if (await exists(pdfPath)) {
+    await remove(pdfPath);
+  }
   
   const command = os === 'windows'
     ? Command.create('powershell', [
@@ -235,5 +241,19 @@ export async function convertToPdf(odtPath: string, outputDir: string, sofficePa
   if (output.code !== 0) {
     console.error("LibreOffice conversion failed:", output.stderr);
     throw new Error(`Conversion failed: ${output.stderr}`);
+  }
+
+  if (!(await exists(pdfPath))) {
+    const details = output.stderr.trim() || output.stdout.trim();
+    throw new Error(
+      details
+        ? `LibreOffice did not create the PDF: ${details}`
+        : 'LibreOffice finished without creating a PDF. Check the configured executable and template.'
+    );
+  }
+
+  const pdfInfo = await stat(pdfPath);
+  if (!pdfInfo.isFile || pdfInfo.size === 0) {
+    throw new Error('LibreOffice created an empty or invalid PDF. Check the template and try again.');
   }
 }

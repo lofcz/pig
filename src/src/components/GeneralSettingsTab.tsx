@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Config, Currency } from '../types';
 import { open } from '@tauri-apps/plugin-dialog';
-import { exists } from '@tauri-apps/plugin-fs';
+import { stat } from '@tauri-apps/plugin-fs';
 import { GlobalSettings, loadGlobalSettings, saveGlobalSettings, autoDetectSoffice, ThemePreference } from '../utils/globalSettings';
 import { APIKeysEditor, APIKeysEditorRef } from './APIKeysEditor';
 import { toast } from 'sonner';
@@ -304,7 +304,16 @@ function SofficePathInput({ value, onChange }: SofficePathInputProps) {
 
   useEffect(() => {
     if (!value) { setIsValid(null); return; }
-    exists(value).then(setIsValid).catch(() => setIsValid(false));
+
+    const executableName = value.replace(/\\/g, '/').split('/').pop()?.toLowerCase();
+    if (executableName !== 'soffice.exe' && executableName !== 'soffice') {
+      setIsValid(false);
+      return;
+    }
+
+    stat(value)
+      .then(info => setIsValid(info.isFile))
+      .catch(() => setIsValid(false));
   }, [value]);
 
   const handleBrowse = async () => {
@@ -348,7 +357,7 @@ function SofficePathInput({ value, onChange }: SofficePathInputProps) {
             type="text"
             value={value}
             onChange={e => onChange(e.target.value)}
-            placeholder="soffice (uses PATH if empty)"
+            placeholder="Select soffice.exe"
             className={`pr-10 ${isValid === true ? 'validation-valid' : isValid === false ? 'validation-invalid' : ''}`}
           />
           <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -369,7 +378,7 @@ function SofficePathInput({ value, onChange }: SofficePathInputProps) {
         </button>
       </div>
       <p className="text-xs mt-1.5" style={{ color: 'var(--text-subtle)' }}>
-        Path to soffice.exe for PDF conversion. Leave empty to use system PATH.
+        Required for invoice previews and PDF generation. Use auto-detect or browse to soffice.exe.
       </p>
     </div>
   );

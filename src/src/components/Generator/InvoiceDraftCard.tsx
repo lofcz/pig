@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
 import {
   FileSignature,
   Hash,
@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { findOption, CreatableSelect } from '../Select';
 import { Tooltip } from '../Tooltip';
+import { FormattedNumberInput } from '../FormattedNumberInput';
 import { Config } from '../../types';
 import { InvoiceDraft } from './types';
 import {
@@ -46,6 +47,30 @@ function InvoiceDraftCardImpl({
     draft?.year ?? 0,
     draft?.month ?? 0
   );
+  // Read store actions imperatively — they're stable and never change identity.
+  const { updateDraft, trackUserEdit, setOverride, setEditingAmountId } =
+    useGeneratorStore.getState();
+
+  const handleAmountCommit = useCallback((newTotal: number | null) => {
+    if (!draft) return;
+
+    if (newTotal !== null && newTotal >= 0) {
+      if (newTotal === draft.periodBaseSalary) {
+        setOverride(periodKey, null);
+      } else {
+        setOverride(periodKey, newTotal);
+      }
+    }
+    setEditingAmountId(null);
+  }, [draft, periodKey, setEditingAmountId, setOverride]);
+
+  const handleAmountKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.currentTarget.blur();
+    } else if (event.key === 'Escape') {
+      setEditingAmountId(null);
+    }
+  }, [setEditingAmountId]);
 
   if (!draft) return null;
 
@@ -71,11 +96,6 @@ function InvoiceDraftCardImpl({
   };
 
   const remainderInfo = getRemainderInfo();
-
-  // Read store actions imperatively — they're stable, never change identity,
-  // and don't subscribe this component to anything reactive.
-  const { updateDraft, trackUserEdit, setOverride, setEditingAmountId } =
-    useGeneratorStore.getState();
 
   return (
     <div
@@ -115,29 +135,12 @@ function InvoiceDraftCardImpl({
           <div className="text-right">
             {isEditingAmount ? (
               <div className="flex items-center gap-2 justify-end">
-                <input
-                  type="number"
+                <FormattedNumberInput
                   autoFocus
                   defaultValue={overrideValue !== undefined ? overrideValue : draft.periodBaseSalary}
                   className="w-32 text-right font-mono text-lg"
-                  onBlur={(e) => {
-                    const newTotal = Number(e.target.value);
-                    if (!isNaN(newTotal) && newTotal >= 0) {
-                      if (newTotal === draft.periodBaseSalary) {
-                        setOverride(periodKey, null);
-                      } else {
-                        setOverride(periodKey, newTotal);
-                      }
-                    }
-                    setEditingAmountId(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      (e.target as HTMLInputElement).blur();
-                    } else if (e.key === 'Escape') {
-                      setEditingAmountId(null);
-                    }
-                  }}
+                  onValueCommit={handleAmountCommit}
+                  onKeyDown={handleAmountKeyDown}
                 />
                 <span className="text-lg font-bold" style={{ color: 'var(--text-muted)' }}>
                   {config.primaryCurrency}

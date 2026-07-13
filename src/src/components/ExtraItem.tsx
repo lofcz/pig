@@ -1,7 +1,8 @@
-import { useState, useEffect, memo, useMemo } from 'react';
+import { useState, useEffect, memo, useMemo, useCallback } from 'react';
 import { Receipt, Loader2 } from 'lucide-react';
 import { openPath } from '@tauri-apps/plugin-opener';
 import { Select, SelectOption, findOption } from './Select';
+import { FormattedNumberInput } from './FormattedNumberInput';
 import styles from './ExtraItem.module.css';
 import { Currency } from '../types';
 
@@ -34,35 +35,39 @@ function ExtraItem({ fileName, filePath, value, currency, primaryCurrency, isAna
   const numericValue = localValue === '' ? 0 : Number(localValue);
   const isActive = numericValue > 0 || isFocused;
 
-  const commitValue = (newCurrency: Currency = currency) => {
+  const commitValue = useCallback((newCurrency: Currency = currency) => {
     onUpdate(numericValue, newCurrency, numericValue > 0);
-  };
+  }, [currency, numericValue, onUpdate]);
 
-  const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setLocalValue(e.target.value);
-  };
+  const handleValueChange = useCallback((rawValue: string) => {
+    setLocalValue(rawValue);
+  }, []);
 
-  const handleValueFocus = () => {
+  const handleValueFocus = useCallback(() => {
     setIsFocused(true);
-  };
+  }, []);
 
-  const handleValueBlur = () => {
+  const handleValueBlur = useCallback(() => {
     setIsFocused(false);
     commitValue();
-  };
+  }, [commitValue]);
 
-  const handleValueKeyDown = (e: React.KeyboardEvent) => {
+  const handleValueKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       commitValue();
       (e.target as HTMLInputElement).blur();
     }
-  };
+  }, [commitValue]);
 
-  const handleCurrencyChange = (opt: SelectOption<Currency> | null) => {
+  const handleCurrencyChange = useCallback((opt: SelectOption<Currency> | null) => {
     if (opt) {
       onUpdate(numericValue, opt.value, numericValue > 0);
     }
-  };
+  }, [numericValue, onUpdate]);
+
+  const handleCurrencyBlur = useCallback(() => {
+    setIsFocused(false);
+  }, []);
 
   return (
     <div className={`${styles.container} ${isActive ? styles.active : ''} ${isAnalyzing ? styles.analyzing : ''}`}>
@@ -75,10 +80,9 @@ function ExtraItem({ fileName, filePath, value, currency, primaryCurrency, isAna
         <span className={styles.fileName}>{fileName}</span>
       </button>
 
-      <input
-        type="number"
+      <FormattedNumberInput
         value={localValue}
-        onChange={handleValueChange}
+        onValueChange={handleValueChange}
         onFocus={handleValueFocus}
         onBlur={handleValueBlur}
         onKeyDown={handleValueKeyDown}
@@ -95,8 +99,8 @@ function ExtraItem({ fileName, filePath, value, currency, primaryCurrency, isAna
           isSearchable={false}
           size="sm"
           isDisabled={isAnalyzing}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
+          onFocus={handleValueFocus}
+          onBlur={handleCurrencyBlur}
         />
       </div>
     </div>

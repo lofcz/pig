@@ -6,7 +6,7 @@
  * - LibreOffice path
  */
 
-import { exists } from '@tauri-apps/plugin-fs';
+import { exists, stat } from '@tauri-apps/plugin-fs';
 
 export type ThemePreference = 'light' | 'dark' | 'system';
 
@@ -21,6 +21,10 @@ export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   theme: 'system',
   sofficePath: undefined,
 };
+
+export type SofficeConfigurationResult =
+  | { valid: true; path: string }
+  | { valid: false; message: string };
 
 const STORAGE_KEY = 'pig_global_settings';
 
@@ -89,5 +93,47 @@ export async function autoDetectSoffice(): Promise<string | null> {
     }
   }
   return null;
+}
+
+/**
+ * Validate the app-wide LibreOffice setting before starting a preview.
+ * Requiring an explicit, existing executable avoids handing an invalid path
+ * to the native shell and lets the UI surface an actionable error instead.
+ */
+export async function validateSofficeConfiguration(): Promise<SofficeConfigurationResult> {
+  const path = loadGlobalSettings().sofficePath?.trim();
+
+  if (!path) {
+    return {
+      valid: false,
+      message: 'Preview requires LibreOffice. Configure soffice.exe in Settings → General.',
+    };
+  }
+
+  const executableName = path.replace(/\\/g, '/').split('/').pop()?.toLowerCase();
+  if (executableName !== 'soffice.exe' && executableName !== 'soffice') {
+    return {
+      valid: false,
+      message: 'The LibreOffice setting must point to soffice.exe. Update it in Settings → General.',
+    };
+  }
+
+  try {
+    const fileInfo = await stat(path);
+    if (!fileInfo.isFile) {
+      return {
+        valid: false,
+        message: 'The LibreOffice setting must point to the soffice executable. Update it in Settings → General.',
+      };
+    }
+  } catch (error) {
+    console.warn('Failed to validate LibreOffice path:', error);
+    return {
+      valid: false,
+      message: 'The configured LibreOffice path no longer exists. Update it in Settings → General.',
+    };
+  }
+
+  return { valid: true, path };
 }
 

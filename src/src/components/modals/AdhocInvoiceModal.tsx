@@ -1,18 +1,20 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
-import { 
-  FileSignature, 
-  Hash, 
-  FileText, 
-  Plus, 
-  Pencil, 
-  X, 
-  Banknote 
+import {
+  FileSignature,
+  Hash,
+  FileText,
+  Plus,
+  Pencil,
+  X,
+  Banknote,
+  Layers
 } from 'lucide-react';
 import { findOption, Select, SelectOption } from '../Select';
 import { DatePicker } from '../DatePicker';
-import { CompanyDetails } from '../../types';
+import { FormattedNumberInput } from '../FormattedNumberInput';
+import { CompanyDetails, Ruleset } from '../../types';
 import { ModalComponent, modal } from '../../contexts/ModalContext';
 
 // Re-export this type for convenience (used in Generator types too)
@@ -27,11 +29,15 @@ export interface AdhocInvoice {
   value: number;
   issueDate: string; // ISO date string YYYY-MM-DD
   dueDate: string;   // ISO date string YYYY-MM-DD
+  // Optional parent ruleset. When set and the ruleset has maxInvoiceValue,
+  // the invoice auto-splits into max-value chunks + remainder.
+  rulesetId?: string;
 }
 
 export interface AdhocInvoiceModalProps {
   companies: CompanyDetails[];
   primaryCurrency: string;
+  rulesets: Ruleset[];
   editingInvoice?: AdhocInvoice;
 }
 
@@ -49,12 +55,13 @@ export interface AdhocInvoiceModalProps {
  * const result = await modal.open(AdhocInvoiceModal, { companies, primaryCurrency, editingInvoice });
  */
 export const AdhocInvoiceModal: ModalComponent<AdhocInvoiceModalProps, Omit<AdhocInvoice, 'id'> | null> & {
-  create: (opts: { companies: CompanyDetails[]; primaryCurrency: string }) => Promise<Omit<AdhocInvoice, 'id'> | null>;
-  edit: (opts: { companies: CompanyDetails[]; primaryCurrency: string; invoice: AdhocInvoice }) => Promise<Omit<AdhocInvoice, 'id'> | null>;
+  create: (opts: { companies: CompanyDetails[]; primaryCurrency: string; rulesets: Ruleset[] }) => Promise<Omit<AdhocInvoice, 'id'> | null>;
+  edit: (opts: { companies: CompanyDetails[]; primaryCurrency: string; rulesets: Ruleset[]; invoice: AdhocInvoice }) => Promise<Omit<AdhocInvoice, 'id'> | null>;
 } = Object.assign(
   (({
-    companies, 
-    primaryCurrency, 
+    companies,
+    primaryCurrency,
+    rulesets,
     editingInvoice,
     resolve,
   }) => {
@@ -75,6 +82,7 @@ export const AdhocInvoiceModal: ModalComponent<AdhocInvoiceModalProps, Omit<Adho
   const [value, setValue] = useState(editingInvoice?.value?.toString() || '');
   const [issueDate, setIssueDate] = useState(editingInvoice?.issueDate || defaultIssueDate);
   const [dueDate, setDueDate] = useState(editingInvoice?.dueDate || defaultDueDate);
+  const [rulesetId, setRulesetId] = useState(editingInvoice?.rulesetId || '');
 
   // Auto-set VS when invoice number changes (if VS hasn't been manually edited)
   useEffect(() => {
@@ -88,6 +96,12 @@ export const AdhocInvoiceModal: ModalComponent<AdhocInvoiceModalProps, Omit<Adho
 
   const supplierOptions: SelectOption[] = suppliers.map(c => ({ value: c.id, label: c.name }));
   const customerOptions: SelectOption[] = customers.map(c => ({ value: c.id, label: c.name }));
+  const rulesetOptions: SelectOption[] = rulesets.map(r => ({
+    value: r.id,
+    label: r.maxInvoiceValue
+      ? `${r.name} (splits over ${r.maxInvoiceValue.toLocaleString()})`
+      : r.name,
+  }));
 
   // Set defaults only when creating new invoice
   useEffect(() => {
@@ -119,7 +133,8 @@ export const AdhocInvoiceModal: ModalComponent<AdhocInvoiceModalProps, Omit<Adho
       customerId,
       value: numValue,
       issueDate,
-      dueDate
+      dueDate,
+      rulesetId: rulesetId || undefined
     });
   };
 
@@ -152,7 +167,10 @@ export const AdhocInvoiceModal: ModalComponent<AdhocInvoiceModalProps, Omit<Adho
         {/* Header */}
         <div 
           className="flex justify-between items-center px-6 py-4"
-          style={{ borderBottom: '1px solid var(--border-default)' }}
+          style={{
+            borderBottom: '1px solid var(--border-default)',
+            backgroundColor: 'var(--bg-surface)'
+          }}
         >
           <div className="flex items-center gap-3">
             <div 
@@ -299,7 +317,7 @@ export const AdhocInvoiceModal: ModalComponent<AdhocInvoiceModalProps, Omit<Adho
           {/* Supplier / Customer */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label 
+              <label
                 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide mb-2"
                 style={{ color: 'var(--text-muted)' }}
               >
@@ -313,7 +331,7 @@ export const AdhocInvoiceModal: ModalComponent<AdhocInvoiceModalProps, Omit<Adho
               />
             </div>
             <div>
-              <label 
+              <label
                 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide mb-2"
                 style={{ color: 'var(--text-muted)' }}
               >
@@ -328,6 +346,39 @@ export const AdhocInvoiceModal: ModalComponent<AdhocInvoiceModalProps, Omit<Adho
             </div>
           </div>
 
+          {/* Parent ruleset (optional) — drives maxInvoiceValue autosplitting */}
+          <div>
+            <label
+              className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide mb-2"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <Layers size={14} />
+              Parent ruleset (optional)
+            </label>
+            <Select
+              value={findOption(rulesetOptions, rulesetId)}
+              onChange={opt => setRulesetId(opt ? opt.value : '')}
+              options={rulesetOptions}
+              isClearable
+              placeholder="None — standalone invoice"
+            />
+            {rulesetId && (() => {
+              const rs = rulesets.find(r => r.id === rulesetId);
+              if (!rs?.maxInvoiceValue) {
+                return (
+                  <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                    This ruleset has no max invoice value — it won't split. Its template will still be used.
+                  </p>
+                );
+              }
+              return (
+                <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                  Splits into {rs.maxInvoiceValue.toLocaleString()} {primaryCurrency} chunks when value exceeds it.
+                </p>
+              );
+            })()}
+          </div>
+
           {/* Value */}
           <div>
             <label 
@@ -338,14 +389,12 @@ export const AdhocInvoiceModal: ModalComponent<AdhocInvoiceModalProps, Omit<Adho
               Value
             </label>
             <div className="flex items-center gap-2">
-              <input
-                type="number"
+              <FormattedNumberInput
                 value={value}
-                onChange={e => setValue(e.target.value)}
+                onValueChange={setValue}
                 placeholder="0"
                 className="flex-1 font-mono text-lg"
-                min="0"
-                step="0.01"
+                autoComplete="off"
               />
               <span 
                 className="text-lg font-bold"
@@ -382,9 +431,9 @@ export const AdhocInvoiceModal: ModalComponent<AdhocInvoiceModalProps, Omit<Adho
   );
   }) as ModalComponent<AdhocInvoiceModalProps, Omit<AdhocInvoice, 'id'> | null>,
   {
-    create: (opts: { companies: CompanyDetails[]; primaryCurrency: string }): Promise<Omit<AdhocInvoice, 'id'> | null> => 
+    create: (opts: { companies: CompanyDetails[]; primaryCurrency: string; rulesets: Ruleset[] }): Promise<Omit<AdhocInvoice, 'id'> | null> => 
       modal.open(AdhocInvoiceModal, opts),
-    edit: (opts: { companies: CompanyDetails[]; primaryCurrency: string; invoice: AdhocInvoice }): Promise<Omit<AdhocInvoice, 'id'> | null> => 
+    edit: (opts: { companies: CompanyDetails[]; primaryCurrency: string; rulesets: Ruleset[]; invoice: AdhocInvoice }): Promise<Omit<AdhocInvoice, 'id'> | null> => 
       modal.open<AdhocInvoiceModalProps, Omit<AdhocInvoice, 'id'> | null>(AdhocInvoiceModal, { ...opts, editingInvoice: opts.invoice }),
   }
 );

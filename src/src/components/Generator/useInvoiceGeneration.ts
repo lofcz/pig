@@ -4,11 +4,12 @@ import { toast } from 'sonner';
 import { Config, CompanyDetails } from '../../types';
 import { moveProplatitFile, ensureYearFolder } from '../../utils/logic';
 import { generateInvoiceOdt, convertToPdf } from '../../utils/odt';
-import { loadGlobalSettings } from '../../utils/globalSettings';
+import { loadGlobalSettings, validateSofficeConfiguration } from '../../utils/globalSettings';
 import { modal } from '../../contexts/ModalContext';
 import { PDFPreviewModal } from '../modals/PDFPreviewModal';
 import { useGeneratorStore } from '../../stores/generatorStore';
 import { InvoiceDraft, AdhocInvoice } from './types';
+import { getAdhocInvoiceParts } from './adhocSplit';
 import { buildInvoiceReplacements, formatDateCzech, formatAmountCzech } from './utils';
 
 interface SelectedProplatitFile {
@@ -27,8 +28,8 @@ export interface UseInvoiceGenerationReturn {
   handleGenerate: (draft: InvoiceDraft, isPreview?: boolean) => Promise<string | undefined>;
   handleGenerateById: (draftId: string) => Promise<string | undefined>;
   handlePreview: (draft: InvoiceDraft) => Promise<void>;
-  handlePreviewAdhocInvoice: (invoice: AdhocInvoice) => Promise<void>;
-  handleGenerateAdhocInvoice: (invoice: AdhocInvoice) => Promise<string | undefined>;
+  handlePreviewAdhocInvoice: (invoice: AdhocInvoice, partIndex?: number) => Promise<void>;
+  handleGenerateAdhocInvoice: (invoice: AdhocInvoice, isPreview?: boolean, partIndex?: number) => Promise<string | undefined>;
 }
 
 export function useInvoiceGeneration({
@@ -37,9 +38,21 @@ export function useInvoiceGeneration({
   selectedProplatitFiles,
 }: UseInvoiceGenerationProps): UseInvoiceGenerationReturn {
 
+  const ensurePreviewAvailable = useCallback(async (): Promise<boolean> => {
+    const result = await validateSofficeConfiguration();
+    if (!result.valid) {
+      toast.error(result.message);
+      return false;
+    }
+    return true;
+  }, []);
+
   const handleGenerate = useCallback(async (draft: InvoiceDraft, isPreview: boolean = false): Promise<string | undefined> => {
     const ruleset = config.rulesets.find(r => r.id === draft.rulesetId);
-    if (!ruleset) { alert("Ruleset not found"); return undefined; }
+    if (!ruleset) {
+      toast.error('The invoice ruleset could not be found');
+      return undefined;
+    }
 
     // Read drafts non-reactively from the store: this callback only fires on
     // explicit user action (click "Generate"), so subscribing here would just
@@ -75,7 +88,10 @@ export function useInvoiceGeneration({
       }
     }
     
-    if (!customer) { alert(`No customer for ${draft.month}/${draft.year} in ruleset ${ruleset.name}`); return undefined; }
+    if (!customer) {
+      toast.error(`No customer is configured for ${draft.month}/${draft.year} in ${ruleset.name}`);
+      return undefined;
+    }
     
     const supplier = config.companies.find(c => c.isSupplier) || config.companies[0];
     const amountStr = formatAmountCzech(draft.amount);
@@ -109,7 +125,9 @@ export function useInvoiceGeneration({
     const outputPath = `${outputDir}\\${odtName}`;
     
     try {
-      // ensureYearFolder already creates the directory, but mkdir is safe to call again
+      // Preview folders are intentionally hidden and may not exist yet.
+      // Real generation folders are already created by ensureYearFolder.
+      await mkdir(outputDir, { recursive: true });
       const templatePath = ruleset.templatePath || 'src/templates/template.odt';
       await generateInvoiceOdt(templatePath, outputPath, replacements);
       await convertToPdf(outputPath, outputDir, loadGlobalSettings().sofficePath);
@@ -127,46 +145,58 @@ export function useInvoiceGeneration({
       
       return outputPath.replace('.odt', '.pdf');
     } catch (e) {
-      console.error(e);
-      alert(`Error generating ${baseName}: ${e}`);
+      console.error(`Failed to generate ${baseName}:`, e);
+      toast.error(`Generation failed: ${e instanceof Error ? e.message : String(e)}`);
       return undefined;
     }
   }, [config, selectedProplatitFiles]);
 
-  const handleGenerateAdhocInvoice = useCallback(async (invoice: AdhocInvoice): Promise<string | undefined> => {
+  const handleGenerateAdhocInvoice = useCallback(async (invoice: AdhocInvoice, isPreview: boolean = false, partIndex: number = 0): Promise<string | undefined> => {
     try {
       const supplier = config.companies.find(c => c.id === invoice.supplierId);
       const customer = config.companies.find(c => c.id === invoice.customerId);
-      
+
       if (!supplier || !customer) {
         toast.error('Supplier or customer not found');
         return undefined;
       }
 
+      // Derive the part to generate. Unsplit invoices yield a single part that
+      // echoes the user's invoiceNo/variableSymbol/value unchanged.
+      const parts = getAdhocInvoiceParts(invoice, config);
+      const part = parts[partIndex];
+      if (!part) {
+        toast.error(`Invalid part index ${partIndex} for ${invoice.name}`);
+        return undefined;
+      }
+
       const issueDate = new Date(invoice.issueDate);
       const issueDateStr = formatDateCzech(issueDate);
-      
+
       const dueDate = new Date(invoice.dueDate);
       const dueDateStr = formatDateCzech(dueDate);
 
-      const amountStr = formatAmountCzech(invoice.value);
+      const amountStr = formatAmountCzech(part.amount);
 
       const replacements = buildInvoiceReplacements(
         supplier,
         customer,
-        invoice.invoiceNo,
-        invoice.variableSymbol,
+        part.invoiceNo,
+        part.variableSymbol,
         issueDateStr,
         dueDateStr,
         invoice.description,
         amountStr
       );
 
-      const year = issueDate.getFullYear();
-      
-      // Use the configured invoices folder structure
-      const outputDir = await ensureYearFolder(config.rootPath, year, config.projectStructure);
-      
+      // For previews, write to a hidden .preview folder so we never pollute the
+      // real invoices directory. For real generation, use the year folder.
+      const outputDir = isPreview
+        ? `${config.rootPath}\\.preview`
+        : await ensureYearFolder(config.rootPath, issueDate.getFullYear(), config.projectStructure);
+
+      await mkdir(outputDir, { recursive: true });
+
       // Normalize the name for filename: remove diacritics, lowercase, replace spaces with underscores
       const normalizedName = invoice.name
         .normalize('NFD')
@@ -174,18 +204,24 @@ export function useInvoiceGeneration({
         .toLowerCase()
         .replace(/\s+/g, '_') // Replace spaces with underscores
         .replace(/[^a-z0-9_]/g, ''); // Remove any other special characters
-      
-      const baseName = `faktura_adhoc_${normalizedName}_${invoice.invoiceNo}`;
+
+      // Distinct filename per part so split invoices don't overwrite each other.
+      const partSuffix = part.isSplit ? `_part${part.partIndex + 1}` : '';
+      const baseName = `faktura_adhoc_${normalizedName}_${invoice.invoiceNo}${partSuffix}`;
       const outputPath = `${outputDir}\\${baseName}.odt`;
 
-      // ensureYearFolder already creates the directory
-      
-      // Use first ruleset's template or default
-      const templatePath = config.rulesets[0]?.templatePath || 'src/templates/template.odt';
-      
+      // Prefer the parent ruleset's template when parented, then fall back to
+      // the first ruleset, then the bundled default.
+      const parentedRuleset = invoice.rulesetId
+        ? config.rulesets.find(r => r.id === invoice.rulesetId)
+        : undefined;
+      const templatePath = parentedRuleset?.templatePath
+        || config.rulesets[0]?.templatePath
+        || 'src/templates/template.odt';
+
       await generateInvoiceOdt(templatePath, outputPath, replacements);
       await convertToPdf(outputPath, outputDir, loadGlobalSettings().sofficePath);
-      
+
       return outputPath.replace('.odt', '.pdf');
     } catch (e) {
       console.error('Generation failed:', e);
@@ -195,12 +231,17 @@ export function useInvoiceGeneration({
   }, [config]);
 
   const handleGenerateById = useCallback(async (draftId: string): Promise<string | undefined> => {
-    // Check if this is an adhoc invoice (prefixed with "adhoc:")
+    // Check if this is an adhoc invoice (prefixed with "adhoc:"). Split adhocs
+    // carry a `#partK` suffix selecting which part to generate; unsplit adhocs
+    // keep the bare `adhoc:${id}` form.
     if (draftId.startsWith('adhoc:')) {
-      const adhocId = draftId.replace('adhoc:', '');
+      const rest = draftId.replace('adhoc:', '');
+      const hashIdx = rest.indexOf('#part');
+      const adhocId = hashIdx >= 0 ? rest.substring(0, hashIdx) : rest;
+      const partIndex = hashIdx >= 0 ? parseInt(rest.substring(hashIdx + 5), 10) : 0;
       const adhocInvoice = adhocInvoices.find(inv => inv.id === adhocId);
       if (!adhocInvoice) return undefined;
-      return handleGenerateAdhocInvoice(adhocInvoice);
+      return handleGenerateAdhocInvoice(adhocInvoice, false, isNaN(partIndex) ? 0 : partIndex);
     }
 
     // Regular draft — read from the store at call time (non-reactive).
@@ -210,6 +251,8 @@ export function useInvoiceGeneration({
   }, [adhocInvoices, handleGenerate, handleGenerateAdhocInvoice]);
 
   const handlePreview = useCallback(async (draft: InvoiceDraft) => {
+    if (!(await ensurePreviewAvailable())) return;
+
     await modal.open(PDFPreviewModal, {
       title: `Preview: ${draft.label}`,
       generator: async () => {
@@ -221,57 +264,30 @@ export function useInvoiceGeneration({
         return URL.createObjectURL(blob);
       }
     });
-  }, [handleGenerate]);
+  }, [ensurePreviewAvailable, handleGenerate]);
 
-  const handlePreviewAdhocInvoice = useCallback(async (invoice: AdhocInvoice) => {
+  const handlePreviewAdhocInvoice = useCallback(async (invoice: AdhocInvoice, partIndex: number = 0) => {
+    if (!(await ensurePreviewAvailable())) return;
+
+    const parts = getAdhocInvoiceParts(invoice, config);
+    const part = parts[partIndex];
+    const title = part ? `Preview: ${part.label}` : `Preview: ${invoice.name}`;
     await modal.open(PDFPreviewModal, {
-      title: `Preview: ${invoice.name}`,
+      title,
       generator: async () => {
-        const supplier = config.companies.find(c => c.id === invoice.supplierId);
-        const customer = config.companies.find(c => c.id === invoice.customerId);
-        
-        if (!supplier || !customer) {
-          toast.error('Supplier or customer not found');
-          return null;
-        }
+        // Reuse the canonical adhoc generator in preview mode. It writes to
+        // .preview (never the real invoices folder) and surfaces any error
+        // via toast before returning undefined, so the user always sees why
+        // the preview failed instead of a silent "No PDF available".
+        const pdfPath = await handleGenerateAdhocInvoice(invoice, true, partIndex);
+        if (!pdfPath) return null;
 
-        const issueDate = new Date(invoice.issueDate);
-        const issueDateStr = formatDateCzech(issueDate);
-        
-        const dueDate = new Date(invoice.dueDate);
-        const dueDateStr = formatDateCzech(dueDate);
-
-        const amountStr = formatAmountCzech(invoice.value);
-
-        const replacements = buildInvoiceReplacements(
-          supplier,
-          customer,
-          invoice.invoiceNo,
-          invoice.variableSymbol,
-          issueDateStr,
-          dueDateStr,
-          invoice.description,
-          amountStr
-        );
-
-        const outputDir = `${config.rootPath}\\.preview`;
-        const baseName = `adhoc_${invoice.invoiceNo}`;
-        const outputPath = `${outputDir}\\${baseName}.odt`;
-
-        await mkdir(outputDir, { recursive: true });
-        
-        const templatePath = config.rulesets[0]?.templatePath || 'src/templates/template.odt';
-        
-        await generateInvoiceOdt(templatePath, outputPath, replacements);
-        await convertToPdf(outputPath, outputDir, loadGlobalSettings().sofficePath);
-        
-        const pdfPath = outputPath.replace('.odt', '.pdf');
         const pdfData = await readFile(pdfPath);
         const blob = new Blob([pdfData], { type: 'application/pdf' });
         return URL.createObjectURL(blob);
       }
     });
-  }, [config]);
+  }, [config, ensurePreviewAvailable, handleGenerateAdhocInvoice]);
 
   return {
     handleGenerate,

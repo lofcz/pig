@@ -90,7 +90,7 @@ export function OnboardingModal({ selectedPath, onConfirm, onCancel }: Onboardin
       
       {/* Modal */}
       <div 
-        className="relative w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden"
+        className="modal-content relative w-full max-w-xl rounded-2xl shadow-2xl"
         style={{ 
           backgroundColor: 'var(--bg-base)',
           border: '1px solid var(--border-default)',

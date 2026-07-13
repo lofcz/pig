@@ -21,6 +21,7 @@ import {
   GeneratorRef,
   useBaseDrafts,
   applyExtraValueToDrafts,
+  getAdhocInvoiceParts,
   useAdhocInvoices,
   useExtraItemsAnalysis,
   useInvoiceGeneration,
@@ -103,6 +104,7 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
   } = useAdhocInvoices({
     companies: config.companies,
     primaryCurrency: config.primaryCurrency,
+    rulesets: config.rulesets,
   });
 
   const {
@@ -199,17 +201,20 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
     computedBaseTotalsRef,
   });
 
-  // Apply extra value to base drafts and push the result through the store.
-  // The store's mergeBaseDrafts action internally calls mergeDraftsWithUserEdits
-  // against state.drafts and state.userEdits, so the call site stays clean.
+  // Apply extra value (proplatit/reimburse files only) to base drafts and push
+  // the result through the store. Adhoc invoices are kept entirely separate
+  // from the salary-based drafts — they have their own list, preview and
+  // generation path, so folding their value into the last month's draft would
+  // both double-count them in the header total AND spuriously re-split the
+  // regular drafts past maxValue. They are added to the grand total directly
+  // in totalDraftValue below.
   useEffect(() => {
     if (proplatitLoading || lastInvoicedMonthLoading) return;
 
-    const totalExtraValue = proplatitTotalValue + adhocTotal;
-    const draftsWithExtra = applyExtraValueToDrafts(baseDrafts, totalExtraValue, config);
+    const draftsWithExtra = applyExtraValueToDrafts(baseDrafts, proplatitTotalValue, config);
 
     mergeBaseDrafts(draftsWithExtra);
-  }, [baseDrafts, proplatitTotalValue, adhocTotal, proplatitLoading, lastInvoicedMonthLoading, config, mergeBaseDrafts]);
+  }, [baseDrafts, proplatitTotalValue, proplatitLoading, lastInvoicedMonthLoading, config, mergeBaseDrafts]);
 
   const handleGenerateAllComplete = useCallback(async () => {
     clearUserEdits();
@@ -274,23 +279,32 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
       .slice()
       .sort((a, b) => new Date(a.issueDate).getTime() - new Date(b.issueDate).getTime());
 
-    const adhocEntries = sortedAdhocs.map(inv => {
+    // Expand each adhoc into one snapshot per part. Unsplit adhocs keep the
+    // bare `adhoc:${id}` id for back-compat; split adhocs use `adhoc:${id}#partK`
+    // so handleGenerateById can route to the right part.
+    const adhocEntries = sortedAdhocs.flatMap(inv => {
       const issueDate = new Date(inv.issueDate);
       const dueDate = new Date(inv.dueDate);
-      return {
+      const issueDateStr = `${issueDate.getDate()}. ${issueDate.getMonth() + 1}. ${issueDate.getFullYear()}`;
+      const dueDateStr = `${dueDate.getDate()}. ${dueDate.getMonth() + 1}. ${dueDate.getFullYear()}`;
+      const sortKey = issueDate.getFullYear() * 12 + issueDate.getMonth();
+
+      return getAdhocInvoiceParts(inv, config).map(part => ({
         snapshot: {
-          id: `adhoc:${inv.id}`,
-          label: inv.name,
-          amount: inv.value,
+          id: part.isSplit
+            ? `adhoc:${inv.id}#part${part.partIndex}`
+            : `adhoc:${inv.id}`,
+          label: part.label,
+          amount: part.amount,
           customerId: inv.customerId,
-          invoiceNo: inv.invoiceNo,
-          issueDate: `${issueDate.getDate()}. ${issueDate.getMonth() + 1}. ${issueDate.getFullYear()}`,
-          dueDate: `${dueDate.getDate()}. ${dueDate.getMonth() + 1}. ${dueDate.getFullYear()}`,
+          invoiceNo: part.invoiceNo,
+          issueDate: issueDateStr,
+          dueDate: dueDateStr,
           description: inv.description,
         },
-        sortKey: issueDate.getFullYear() * 12 + issueDate.getMonth(),
+        sortKey,
         kind: 1,
-      };
+      }));
     });
 
     // Stable-sort the combined list. JS Array.sort is stable since ES2019,
@@ -368,6 +382,7 @@ const Generator = forwardRef<GeneratorRef, GeneratorProps>(function Generator({ 
         <AdhocInvoicesList
           invoices={adhocInvoices}
           primaryCurrency={config.primaryCurrency}
+          config={config}
           onPreview={handlePreviewAdhocInvoice}
           onEdit={openEditAdhocModal}
           onRemove={handleRemoveAdhocInvoice}
